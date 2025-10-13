@@ -23,7 +23,7 @@ class KatzenschreckApp:  # pylint: disable=too-few-public-methods
     def _get_config_path(self):
         """Determines the correct config.txt path (Docker or local)"""
         # Check if running in Docker container
-        docker_config_path = '/app/config.txt'
+        docker_config_path = '/katzenschreck/config.txt'
         if os.path.exists(docker_config_path):
             return docker_config_path
         # Default to local path
