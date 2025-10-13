@@ -14,15 +14,15 @@ RUN apt-get update && apt-get install -y \
 # Copy requirements file
 COPY cat_detector/requirements_jetson.txt /katzenschreck/requirements_jetson.txt
 
-# Update setuptools first to fix compatibility issues
-RUN pip install --upgrade setuptools
+# Update pip, setuptools and wheel to fix compatibility issues
+RUN pip install --upgrade pip setuptools wheel
 
 # Fix OpenCV compatibility issues and install additional dependencies
 # The ultralytics:jetpack5 image already has most dependencies, but we need to ensure OpenCV compatibility
 RUN pip uninstall -y opencv-python-headless || true && \
     pip install --no-cache-dir \
     opencv-python==4.8.1.78 \
-    paho-mqtt==1.5.1 \
+    paho-mqtt==1.4.0 \
     mysql-connector-python==8.0.33
 
 # Copy application code
