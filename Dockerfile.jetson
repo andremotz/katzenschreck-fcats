@@ -1,10 +1,10 @@
 # Dockerfile for Katzenschreck on NVIDIA Jetson
 # Based on ultralytics/ultralytics with additional dependencies
 
-FROM ultralytics/ultralytics:latest-jetson
+FROM ultralytics/ultralytics:jetpack5
 
 # Set working directory
-WORKDIR /app
+WORKDIR /katzenschreck
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -12,31 +12,22 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements file
-COPY cat_detector/requirements_jetson.txt /app/requirements_jetson.txt
+COPY cat_detector/requirements_jetson.txt /katzenschreck/requirements_jetson.txt
 
-# Install Python dependencies
-# Note: PyTorch and ultralytics are already included in the base image
-# Install all other requirements except torch/torchvision/ultralytics
-RUN pip install --no-cache-dir \
-    numpy==1.21.6 \
-    opencv-python==4.5.5.64 \
-    pillow==8.4.0 \
-    matplotlib==3.5.3 \
-    pandas==1.5.3 \
-    pyyaml==6.0 \
-    tqdm==4.64.1 \
-    requests==2.28.2 \
-    scipy==1.9.3 \
+# Fix OpenCV compatibility issues and install additional dependencies
+# The ultralytics:jetpack5 image already has most dependencies, but we need to ensure OpenCV compatibility
+RUN pip uninstall -y opencv-python-headless || true && \
+    pip install --no-cache-dir \
+    opencv-python==4.8.1.78 \
     paho-mqtt==1.6.1 \
-    mysql-connector-python==8.0.33 \
-    psutil==5.9.5
+    mysql-connector-python==8.0.33
 
 # Copy application code
-COPY cat_detector/ /app/cat_detector/
-COPY config.txt.example /app/config.txt.example
+COPY cat_detector/ /katzenschreck/cat_detector/
+COPY config.txt.example /katzenschreck/config.txt.example
 
 # Create results directory
-RUN mkdir -p /app/results
+RUN mkdir -p /katzenschreck/results
 
 # Pre-download YOLO11x model for Jetson
 RUN python3 -c "from ultralytics import YOLO; YOLO('yolo11x.pt')"
@@ -45,5 +36,5 @@ RUN python3 -c "from ultralytics import YOLO; YOLO('yolo11x.pt')"
 ENV PYTHONUNBUFFERED=1
 
 # Default command (can be overridden)
-CMD ["python3", "-m", "cat_detector.main", "/app/results"]
+CMD ["python3", "-m", "cat_detector.main", "/katzenschreck/results"]
 

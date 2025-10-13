@@ -18,8 +18,8 @@ services:
     
     # Mount config and results
     volumes:
-      - ./config.txt:/app/config.txt:ro
-      - ./results:/app/results
+      - ./config.txt:/katzenschreck/config.txt:ro
+      - ./results:/katzenschreck/results
     
     # Network mode for RTSP streams
     network_mode: host
