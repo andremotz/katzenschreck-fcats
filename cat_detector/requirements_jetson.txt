@@ -6,7 +6,7 @@
 opencv-python==4.8.1.78
 
 # MQTT and Database
-paho-mqtt==1.4.0
+paho-mqtt==2.1.0
 mysql-connector-python==8.0.33
 
 # Additional dependencies (if not already in base image)

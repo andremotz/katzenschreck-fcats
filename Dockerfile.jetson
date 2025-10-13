@@ -22,7 +22,7 @@ RUN pip install --upgrade pip setuptools wheel
 RUN pip uninstall -y opencv-python-headless || true && \
     pip install --no-cache-dir \
     opencv-python==4.8.1.78 \
-    paho-mqtt==1.4.0 \
+    paho-mqtt==2.1.0 \
     mysql-connector-python==8.0.33
 
 # Copy application code
