@@ -1,18 +1,5 @@
 #!/bin/bash
 
-# Katzenschreck Jetson Docker Start Script
-# Optimized for ultralytics:jetpack5 Docker container
-
-echo "🐱 Starting Katzenschreck on Jetson with Docker"
-echo "==============================================="
-
-# Get the latest changes
-echo "📥 Updating repository..."
-git config --global credential.helper store
-git pull https://github.com/andremotz/katzenschreck.git
-
-# Remove config.txt from index
-git rm --cached config.txt
 
 # Build the Docker image
 echo "🔨 Building Jetson Docker image..."
