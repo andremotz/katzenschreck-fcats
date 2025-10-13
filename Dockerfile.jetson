@@ -14,6 +14,9 @@ RUN apt-get update && apt-get install -y \
 # Copy requirements file
 COPY cat_detector/requirements_jetson.txt /katzenschreck/requirements_jetson.txt
 
+# Update setuptools first to fix compatibility issues
+RUN pip install --upgrade setuptools
+
 # Fix OpenCV compatibility issues and install additional dependencies
 # The ultralytics:jetpack5 image already has most dependencies, but we need to ensure OpenCV compatibility
 RUN pip uninstall -y opencv-python-headless || true && \
