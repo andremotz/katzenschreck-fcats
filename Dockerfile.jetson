@@ -1,7 +1,7 @@
 # Dockerfile for Katzenschreck on NVIDIA Jetson
 # Based on ultralytics/ultralytics with additional dependencies
 
-FROM ultralytics/ultralytics:jetpack5
+FROM ultralytics/ultralytics:latest-jetson-jetpack5
 
 # Set working directory
 WORKDIR /katzenschreck
