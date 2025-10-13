@@ -28,7 +28,7 @@ results/
 *.log
 
 # Config (will be mounted)
-config.txt
+# config.txt - now needed for Docker build
 
 # Documentation
 *.md
