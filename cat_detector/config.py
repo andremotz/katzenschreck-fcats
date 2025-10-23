@@ -29,6 +29,7 @@ class Config:  # pylint: disable=too-few-public-methods,too-many-instance-attrib
         # Detection configuration
         self.confidence_threshold = float(config.get('confidence_threshold', 0.5))
         self.usage_threshold = float(config.get('usage_threshold', 0.8))
+        self.yolo_model = config.get('yolo_model')  # Optional: if None, auto-detection will be used
 
         # Database configuration
         self.db_host = config.get('db_host', 'localhost')
