@@ -27,7 +27,6 @@ RUN pip uninstall -y opencv-python-headless || true && \
 
 # Copy application code
 COPY cat_detector/ /katzenschreck/cat_detector/
-COPY config.txt.example /katzenschreck/config.txt.example
 COPY config.txt /katzenschreck/config.txt
 
 # Create results directory

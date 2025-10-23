@@ -12,8 +12,13 @@ mqtt_username=<your_mqtt_username>
 mqtt_password=<your_mqtt_password>
 
 # Object Detection Configuration
+# Minimum confidence level (0.0-1.0) required for object detection to trigger an alert
 confidence_threshold=0.5
+# Disk usage threshold (0.0-1.0) - when exceeded, oldest images are automatically deleted
 usage_threshold=0.8
+# YOLO model to use (optional) - if not set, auto-detection based on hardware will be used
+# Valid values: yolo11x.pt, yolo11l.pt, yolo11m.pt, yolo11s.pt, yolo11n.pt
+# yolo_model=yolo11x.pt
 
 # Ignore Zone (optional) - Coordinates as decimal values (0.0-1.0): x_min,y_min,x_max,y_max
 # ignore_zone=0.1,0.1,0.3,0.3

@@ -93,26 +93,11 @@ class HardwareDetector:
         Returns:
             Tuple of (model_name, requirements_file)
         """
+        # Always use yolo11x for best accuracy across all platforms
         if self.is_jetson:
-            # Jetson always uses yolo11x for best performance
             return 'yolo11x.pt', 'requirements_jetson.txt'
-        
-        elif self.is_raspberry_pi:
-            if self.memory_gb >= 8:
-                return 'yolo11x.pt', 'requirements.txt'
-            elif self.memory_gb >= 4:
-                return 'yolo11l.pt', 'requirements.txt'
-            else:
-                return 'yolo11m.pt', 'requirements.txt'
-        
         else:
-            # Default for other platforms (e.g., desktop)
-            if self.memory_gb >= 16:
-                return 'yolo11x.pt', 'requirements.txt'
-            elif self.memory_gb >= 8:
-                return 'yolo11l.pt', 'requirements.txt'
-            else:
-                return 'yolo11m.pt', 'requirements.txt'
+            return 'yolo11x.pt', 'requirements.txt'
     
     def get_hardware_info(self) -> dict:
         """Get detailed hardware information"""
