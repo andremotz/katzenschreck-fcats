@@ -116,22 +116,51 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
 
     def run(self):
         """Main loop for stream processing"""
+        retry_delay = 5
+        max_retry_delay = 60
+        consecutive_failures = 0
+        
         while True:
-            cap = cv2.VideoCapture(self.config.rtsp_stream_url)
+            print(f"🎥 Attempting to connect to RTSP stream: {self.config.rtsp_stream_url}")
+            
+            # Set OpenCV RTSP options for faster timeout and better compatibility
+            cap = cv2.VideoCapture(self.config.rtsp_stream_url, cv2.CAP_FFMPEG)
+            cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000)  # 10 second timeout
+            cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 10000)  # 10 second read timeout
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 3)  # Reduce buffer to minimize lag
 
             if not cap.isOpened():
-                print(f"Error opening RTSP stream: "
-                      f"{self.config.rtsp_stream_url}. Retrying in 5 seconds...")
-                time.sleep(5)
+                consecutive_failures += 1
+                print(f"❌ Failed to open RTSP stream (attempt #{consecutive_failures})")
+                print(f"   Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+                
+                # Exponential backoff: increase delay after each failure
+                retry_delay = min(retry_delay * 1.5, max_retry_delay)
                 continue
 
-            print("RTSP stream connection established successfully.")
+            print("✅ RTSP stream connection established successfully")
+            consecutive_failures = 0
+            retry_delay = 5  # Reset retry delay on success
+            frame_read_failures = 0
+            max_frame_failures = 10
 
             # Process frames
             while cap.isOpened():
                 ret, frame = cap.read()
                 if not ret:
-                    break
+                    frame_read_failures += 1
+                    print(f"⚠️  Failed to read frame ({frame_read_failures}/{max_frame_failures})")
+                    
+                    if frame_read_failures >= max_frame_failures:
+                        print("❌ Too many frame read failures. Reconnecting...")
+                        break
+                    
+                    time.sleep(0.5)
+                    continue
+                
+                # Reset failure counter on successful read
+                frame_read_failures = 0
 
                 # Reduce frame resolution from 4K to Full HD
                 frame = self._resize_frame_to_fullhd(frame)
@@ -149,9 +178,11 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 # Exit on 'q'
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     cap.release()
+                    print("🛑 Stopping stream processor")
                     return
 
             cap.release()
+            print("🔄 Stream disconnected. Attempting to reconnect...")
 
         print(f'Frames with detected objects are saved in folder '
               f'"{self.output_dir}".')
