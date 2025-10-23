@@ -44,7 +44,8 @@ class MQTTHandler:  # pylint: disable=too-few-public-methods
 
     def _setup_client(self):
         """Sets up the persistent MQTT client with auto-reconnect"""
-        self.client = mqtt.Client(client_id=f"katzenschreck_{self.config.camera_name}")
+        timestamp = int(time.time())
+        self.client = mqtt.Client(client_id=f"katzenschreck_{self.config.camera_name}_{timestamp}")
         self.client.username_pw_set(self.config.mqtt_username,
                                    self.config.mqtt_password)
         
