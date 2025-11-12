@@ -6,24 +6,35 @@ FROM ultralytics/ultralytics:latest-jetson-jetpack5
 # Set working directory
 WORKDIR /katzenschreck
 
-# Install system dependencies
+# Install system dependencies including FFmpeg libraries for OpenCV
 RUN apt-get update && apt-get install -y \
     git \
+    ffmpeg \
+    libavcodec58 \
+    libavformat58 \
+    libavutil56 \
+    libswscale5 \
+    libswresample3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements file
 COPY cat_detector/requirements_jetson.txt /katzenschreck/requirements_jetson.txt
 
-# Update pip, setuptools and wheel to fix compatibility issues
-RUN pip install --upgrade pip setuptools wheel
-
-# Fix OpenCV compatibility issues and install additional dependencies
-# The ultralytics:jetpack5 image already has most dependencies, but we need to ensure OpenCV compatibility
-RUN pip uninstall -y opencv-python-headless || true && \
-    pip install --no-cache-dir \
-    opencv-python==4.8.1.78 \
-    paho-mqtt==2.1.0 \
-    mysql-connector-python==8.0.33
+# Install Python dependencies
+# Note: PyTorch, ultralytics, and opencv are already included in the base image
+# Install all other requirements except torch/torchvision/ultralytics/opencv
+RUN pip install --no-cache-dir \
+    numpy==1.21.6 \
+    pillow==8.4.0 \
+    matplotlib==3.5.3 \
+    pandas==1.5.3 \
+    pyyaml==6.0 \
+    tqdm==4.64.1 \
+    requests==2.28.2 \
+    scipy==1.9.3 \
+    paho-mqtt==1.6.1 \
+    mysql-connector-python==8.0.33 \
+    psutil==5.9.5
 
 # Copy application code
 COPY cat_detector/ /katzenschreck/cat_detector/
