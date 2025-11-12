@@ -6,6 +6,15 @@
 
 ![Katzenschreck Detection Example](photos/PHOTO-2025-09-24-11-28-54.jpg)
 
+## Hardware Requirements & Performance
+
+The inference script can run on a Raspberry Pi, but an accelerated device like a **Jetson Nano** is highly recommended for better performance.
+
+**Real-world performance measurements (based on YOLO11x):**
+- **Raspberry Pi 3**: Over 50 seconds per frame (which might be sufficient for detecting a cat)
+- **Raspberry Pi 4**: ~22 seconds per frame
+- **Jetson Xavier NX Developer Board**: 180ms per frame
+
 ## Features
 
 - **Object Detection**: Automatic cat detection using YOLO
