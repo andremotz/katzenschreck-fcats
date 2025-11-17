@@ -33,7 +33,7 @@ class ObjectDetector:
     def detect_objects(self, frame) -> Tuple[List[Tuple[int, float, List[float]]],
                                             object]:
         """Detects objects in frame and returns relevant detections"""
-        results = self.model(frame)
+        results = self.model(frame, verbose=False)
         detections = []
 
         for result in results:

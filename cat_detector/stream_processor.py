@@ -93,6 +93,7 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
 
                 # Generate timestamp
                 timestamp = time.strftime('%Y-%m-%d_%H-%M-%S-%f')[:-3]
+                timestamp_readable = time.strftime('%Y-%m-%d %H:%M:%S')
 
                 # Save frame
                 self._save_detection(annotated_frame, timestamp)
@@ -106,11 +107,9 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 else:
                     print("Error saving detection image to database")
 
-                # Output information
+                # Output information with timestamp and confidence
                 class_name = self.detector.CLASS_NAMES.get(class_id, "Unknown")
-                print(f'Detected class ID: {class_id}')
-                print(f'Detected class name: {class_name}')
-                print(f'Detected class confidence: {confidence}')
+                print(f'[{timestamp_readable}] Detected: {class_name} (ID: {class_id}, Confidence: {confidence:.4f})')
 
                 # Send MQTT message
                 self.mqtt_handler.publish_detection(class_name, confidence,
