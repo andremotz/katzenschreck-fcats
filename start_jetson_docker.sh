@@ -26,6 +26,5 @@ docker run -d \
     --network host \
     katzenschreck-jetson
 
-echo "✅ Katzenschreck container started successfully!"
 echo "📊 View logs with: docker logs -f katzenschreck"
 echo "🛑 Stop with: docker stop katzenschreck"

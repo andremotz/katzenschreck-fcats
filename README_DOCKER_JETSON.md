@@ -13,8 +13,8 @@ This guide explains how to run Katzenschreck on an NVIDIA Jetson using the ultra
 ### 1. Clone Repository
 
 ```bash
-git clone https://github.com/andremotz/katzenschreck.git
-cd katzenschreck
+git clone https://github.com/andremotz/katzenschreck-fcats.git
+cd katzenschreck-fcats
 ```
 
 ### 2. Create Config File
