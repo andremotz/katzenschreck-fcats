@@ -21,7 +21,9 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
     def __init__(self, config: Config, output_dir: str):
         self.config = config
         self.output_dir = output_dir
-        self.detector = ObjectDetector(hardware_type=config.hardware_type)
+        # Use configured model if available, otherwise auto-detect
+        model_path = config.yolo_model if config.yolo_model else None
+        self.detector = ObjectDetector(model_path=model_path, hardware_type=config.hardware_type)
         self.mqtt_handler = MQTTHandler(config)
         self.db_handler = DatabaseHandler(config)
 

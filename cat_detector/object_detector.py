@@ -1,5 +1,6 @@
 """Object detection using YOLO for cat detection"""
 
+import os
 from typing import Optional, List, Tuple
 from ultralytics import YOLO
 from .hardware_detector import HardwareDetector
@@ -9,7 +10,7 @@ class ObjectDetector:
     """YOLO object detection class with automatic hardware detection"""
 
     CLASS_NAMES = {0: 'Person', 15: 'Cat'}
-    TARGET_CLASS_ID = 15  # Cat
+    TARGET_CLASS_IDS = [0, 15]  # Person and Cat
 
     def __init__(self, model_path: Optional[str] = None, hardware_type: Optional[str] = None):
         # Auto-detect optimal model if not specified
@@ -18,6 +19,14 @@ class ObjectDetector:
             model_path, requirements_file = hardware_detector.get_optimal_model()
             print(f"🤖 Auto-detected optimal model: {model_path}")
             print(f"📋 Using requirements: {requirements_file}")
+        
+        # Resolve relative paths (e.g., runs/train15/weights/best.pt)
+        if not os.path.isabs(model_path) and not os.path.exists(model_path):
+            # Try relative to project root
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            absolute_path = os.path.join(project_root, model_path)
+            if os.path.exists(absolute_path):
+                model_path = absolute_path
         
         self.model = YOLO(model_path)
 
@@ -31,8 +40,8 @@ class ObjectDetector:
             for box in result.boxes:
                 class_id = int(box.cls.item())
 
-                # Only detect cats (not persons)
-                if class_id == self.TARGET_CLASS_ID and class_id != 0:
+                # Detect both persons and cats
+                if class_id in self.TARGET_CLASS_IDS:
                     confidence = box.conf.item()
                     bbox = box.xyxy[0].tolist()  # [x1, y1, x2, y2]
                     detections.append((class_id, confidence, bbox))
