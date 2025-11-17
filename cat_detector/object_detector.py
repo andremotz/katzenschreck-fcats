@@ -13,9 +13,12 @@ class ObjectDetector:
     TARGET_CLASS_IDS = [0, 15]  # Person and Cat
 
     def __init__(self, model_path: Optional[str] = None, hardware_type: Optional[str] = None):
+        # Detect hardware type for optimization (reused for model selection and inference params)
+        hardware_detector = HardwareDetector(forced_type=hardware_type)
+        self.is_jetson = hardware_detector.is_jetson
+        
         # Auto-detect optimal model if not specified
         if model_path is None:
-            hardware_detector = HardwareDetector(forced_type=hardware_type)
             model_path, requirements_file = hardware_detector.get_optimal_model()
             print(f"🤖 Auto-detected optimal model: {model_path}")
             print(f"📋 Using requirements: {requirements_file}")
@@ -29,11 +32,28 @@ class ObjectDetector:
                 model_path = absolute_path
         
         self.model = YOLO(model_path)
+        
+        # Set memory-efficient parameters for Jetson
+        if self.is_jetson:
+            print("🔧 Optimizing YOLO for Jetson (reduced memory usage)")
+            # Use smaller image size and FP16 for Jetson to reduce memory usage
+            self.inference_params = {
+                'imgsz': 640,  # Reduced from default to save memory
+                'half': True,   # Use FP16 precision on Jetson
+                'device': 0,   # Use GPU
+                'verbose': False
+            }
+        else:
+            self.inference_params = {
+                'imgsz': 1280,  # Standard size for other hardware
+                'verbose': False
+            }
 
     def detect_objects(self, frame) -> Tuple[List[Tuple[int, float, List[float]]],
                                             object]:
         """Detects objects in frame and returns relevant detections"""
-        results = self.model(frame, verbose=False)
+        # Use memory-efficient parameters, especially for Jetson
+        results = self.model(frame, **self.inference_params)
         detections = []
 
         for result in results:
