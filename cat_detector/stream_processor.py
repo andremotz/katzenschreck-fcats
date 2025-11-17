@@ -125,10 +125,18 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
             print(f"🎥 Attempting to connect to RTSP stream: {self.config.rtsp_stream_url}")
             
             # Set OpenCV RTSP options for faster timeout and better compatibility
-            cap = cv2.VideoCapture(self.config.rtsp_stream_url, cv2.CAP_FFMPEG)
+            # Use FFmpeg backend with low-latency RTSP options
+            rtsp_url = self.config.rtsp_stream_url
+            # Add FFmpeg options for low latency: drop old frames and use TCP for reliability
+            if '?' not in rtsp_url:
+                rtsp_url += '?rtsp_transport=tcp&buffer_size=1'
+            else:
+                rtsp_url += '&rtsp_transport=tcp&buffer_size=1'
+            
+            cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
             cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000)  # 10 second timeout
             cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 10000)  # 10 second read timeout
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 3)  # Reduce buffer to minimize lag
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimal buffer (1 frame) to minimize lag
 
             if not cap.isOpened():
                 consecutive_failures += 1
@@ -148,7 +156,22 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
 
             # Process frames
             while cap.isOpened():
+                # Skip old frames in buffer to always get the latest frame
+                # This prevents delay accumulation when processing is slower than stream FPS
+                # Read frames quickly until we get the most recent one
                 ret, frame = cap.read()
+                if ret:
+                    # Try to get a newer frame if available (non-blocking check)
+                    # This ensures we always process the latest frame, not an old buffered one
+                    temp_ret, temp_frame = cap.read()
+                    if temp_ret:
+                        # A newer frame was available, use that instead
+                        ret, frame = temp_ret, temp_frame
+                        # Try one more time to get the absolute latest
+                        temp_ret, temp_frame = cap.read()
+                        if temp_ret:
+                            ret, frame = temp_ret, temp_frame
+                
                 if not ret:
                     frame_read_failures += 1
                     print(f"⚠️  Failed to read frame ({frame_read_failures}/{max_frame_failures})")
