@@ -208,11 +208,8 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 if detections:
                     self._process_detections(frame, detections, results)
 
-                # Exit on 'q'
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    cap.release()
-                    print("🛑 Stopping stream processor")
-                    return
+                # Note: cv2.waitKey() removed - not needed in headless Docker container
+                # Container can be stopped with: docker stop katzenschreck
 
             cap.release()
             print("🔄 Stream disconnected. Attempting to reconnect...")

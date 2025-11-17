@@ -21,6 +21,7 @@ docker run -d \
     --restart unless-stopped \
     -e NVIDIA_VISIBLE_DEVICES=all \
     -e NVIDIA_DRIVER_CAPABILITIES=all \
+    -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
     -v ./config.txt:/katzenschreck/config.txt:ro \
     -v ./results:/katzenschreck/results \
     --network host \
