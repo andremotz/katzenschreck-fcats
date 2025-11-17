@@ -76,44 +76,50 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
     def _process_detections(self, frame, detections, results):
         """Processes the detections"""
         for class_id, confidence, bbox in detections:
+            class_name = self.detector.CLASS_NAMES.get(class_id, "Unknown")
             if confidence > self.config.confidence_threshold:
-                # Check ignore zone
-                if self.detector.is_in_ignore_zone(bbox, frame.shape,
-                                                 self.config.ignore_zone):
-                    continue
+                print(f"✅ Processing {class_name} (Confidence: {confidence:.4f} > Threshold: {self.config.confidence_threshold})")
+            else:
+                print(f"❌ Skipping {class_name} (Confidence: {confidence:.4f} <= Threshold: {self.config.confidence_threshold})")
+                continue
+            
+            # Check ignore zone
+            if self.detector.is_in_ignore_zone(bbox, frame.shape,
+                                             self.config.ignore_zone):
+                print(f"⏭️  {class_name} in ignore zone, skipping")
+                continue
 
-                # Annotate frame
-                annotated_frame = None
-                for result in results:
-                    annotated_frame = result.plot()
-                    break
+            # Annotate frame
+            annotated_frame = None
+            for result in results:
+                annotated_frame = result.plot()
+                break
 
-                if annotated_frame is None:
-                    continue
+            if annotated_frame is None:
+                continue
 
-                # Generate timestamp
-                timestamp = time.strftime('%Y-%m-%d_%H-%M-%S-%f')[:-3]
-                timestamp_readable = time.strftime('%Y-%m-%d %H:%M:%S')
+            # Generate timestamp
+            timestamp = time.strftime('%Y-%m-%d_%H-%M-%S-%f')[:-3]
+            timestamp_readable = time.strftime('%Y-%m-%d %H:%M:%S')
 
-                # Save frame
-                self._save_detection(annotated_frame, timestamp)
+            # Save frame
+            self._save_detection(annotated_frame, timestamp)
 
-                # Save detection image to database
-                success = self.db_handler.save_frame_to_database(
-                    annotated_frame, confidence)
-                if success:
-                    print(f"Detection image saved to database "
-                          f"(Confidence: {confidence:.2f})")
-                else:
-                    print("Error saving detection image to database")
+            # Save detection image to database
+            success = self.db_handler.save_frame_to_database(
+                annotated_frame, confidence)
+            if success:
+                print(f"Detection image saved to database "
+                      f"(Confidence: {confidence:.2f})")
+            else:
+                print("Error saving detection image to database")
 
-                # Output information with timestamp and confidence
-                class_name = self.detector.CLASS_NAMES.get(class_id, "Unknown")
-                print(f'[{timestamp_readable}] Detected: {class_name} (ID: {class_id}, Confidence: {confidence:.4f})')
+            # Output information with timestamp and confidence
+            print(f'[{timestamp_readable}] Detected: {class_name} (ID: {class_id}, Confidence: {confidence:.4f})')
 
-                # Send MQTT message
-                self.mqtt_handler.publish_detection(class_name, confidence,
-                                                   timestamp)
+            # Send MQTT message
+            self.mqtt_handler.publish_detection(class_name, confidence,
+                                               timestamp)
 
     def run(self):
         """Main loop for stream processing"""
@@ -134,9 +140,9 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 rtsp_url += '&rtsp_transport=tcp&buffer_size=1'
             
             cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
-            cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000)  # 10 second timeout
-            cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 10000)  # 10 second read timeout
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimal buffer (1 frame) to minimize lag
+            cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 15000)  # 15 second timeout
+            cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000)  # 5 second read timeout (shorter for faster recovery)
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)  # Small buffer (2 frames) to balance latency and stability
 
             if not cap.isOpened():
                 consecutive_failures += 1
@@ -158,19 +164,15 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
             while cap.isOpened():
                 # Skip old frames in buffer to always get the latest frame
                 # This prevents delay accumulation when processing is slower than stream FPS
-                # Read frames quickly until we get the most recent one
+                # Read frames quickly until we get the most recent one (max 2 attempts to avoid stream issues)
                 ret, frame = cap.read()
                 if ret:
-                    # Try to get a newer frame if available (non-blocking check)
-                    # This ensures we always process the latest frame, not an old buffered one
+                    # Try to get a newer frame if available (only once to avoid overloading stream)
+                    # This ensures we process a relatively recent frame without breaking the connection
                     temp_ret, temp_frame = cap.read()
                     if temp_ret:
                         # A newer frame was available, use that instead
                         ret, frame = temp_ret, temp_frame
-                        # Try one more time to get the absolute latest
-                        temp_ret, temp_frame = cap.read()
-                        if temp_ret:
-                            ret, frame = temp_ret, temp_frame
                 
                 if not ret:
                     frame_read_failures += 1
@@ -194,6 +196,13 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
 
                 # Object detection
                 detections, results = self.detector.detect_objects(frame)
+
+                # Debug: Print all detections before filtering
+                if detections:
+                    print(f"🔍 Found {len(detections)} detection(s) before filtering:")
+                    for class_id, confidence, bbox in detections:
+                        class_name = self.detector.CLASS_NAMES.get(class_id, "Unknown")
+                        print(f"   - {class_name} (ID: {class_id}, Confidence: {confidence:.4f}, Threshold: {self.config.confidence_threshold})")
 
                 # Process detections
                 if detections:
