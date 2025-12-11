@@ -4,6 +4,9 @@ import os
 import time
 import cv2
 import sys
+import threading
+import queue
+import copy
 
 # Add the parent directory to the Python path for absolute imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -31,15 +34,81 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
         self.last_frame_save_time = 0
         self.frame_save_interval = 3600  # 3600 seconds = 1 hour
 
+        # Performance monitoring for dynamic frame skipping
+        self.processing_times = []  # Track last N processing times
+        self.max_processing_times = 10  # Keep last 10 processing times
+        self.target_fps = 1.0  # Target: process at least 1 frame per second
+        self.max_processing_time = 1.0 / self.target_fps  # Max 1 second per frame
+
+        # Background task queues for non-blocking operations
+        self.db_queue = queue.Queue(maxsize=10)  # Limit queue size to prevent memory issues
+        self.file_queue = queue.Queue(maxsize=10)
+        
+        # Start background worker threads
+        self._start_background_workers()
+
         # Create output directory
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
+    def _start_background_workers(self):
+        """Starts background worker threads for non-blocking operations"""
+        # Database worker thread
+        db_worker = threading.Thread(target=self._db_worker, daemon=True)
+        db_worker.start()
+        
+        # File save worker thread
+        file_worker = threading.Thread(target=self._file_worker, daemon=True)
+        file_worker.start()
+        
+        print("✅ Background workers started for non-blocking operations")
+
+    def _db_worker(self):
+        """Background worker thread for database operations"""
+        while True:
+            try:
+                task = self.db_queue.get(timeout=1)
+                if task is None:  # Shutdown signal
+                    break
+                frame, confidence, timestamp = task
+                self.db_handler.save_frame_to_database(frame, confidence)
+                print(f"✅ Background: Detection image saved to database (Confidence: {confidence:.2f})")
+                self.db_queue.task_done()
+            except queue.Empty:
+                continue
+            except Exception as e:
+                print(f"⚠️  Database worker error: {e}")
+                self.db_queue.task_done()
+
+    def _file_worker(self):
+        """Background worker thread for file operations"""
+        while True:
+            try:
+                task = self.file_queue.get(timeout=1)
+                if task is None:  # Shutdown signal
+                    break
+                annotated_frame, timestamp = task
+                cleanup_results_folder(self.output_dir, self.config.usage_threshold)
+                output_file = f'{self.output_dir}/frame_{timestamp}.jpg'
+                cv2.imwrite(output_file, annotated_frame)
+                print(f"✅ Background: Frame saved to {output_file}")
+                self.file_queue.task_done()
+            except queue.Empty:
+                continue
+            except Exception as e:
+                print(f"⚠️  File worker error: {e}")
+                self.file_queue.task_done()
+
     def _save_detection(self, annotated_frame, timestamp: str):
-        """Saves the detected frame"""
-        cleanup_results_folder(self.output_dir, self.config.usage_threshold)
-        output_file = f'{self.output_dir}/frame_{timestamp}.jpg'
-        cv2.imwrite(output_file, annotated_frame)
+        """Queues the detected frame for background saving (non-blocking)"""
+        try:
+            # Make a copy of the frame for the background thread
+            frame_copy = copy.deepcopy(annotated_frame)
+            self.file_queue.put_nowait((frame_copy, timestamp))
+        except queue.Full:
+            print("⚠️  File queue full, skipping frame save (non-critical)")
+        except Exception as e:
+            print(f"⚠️  Error queueing frame save: {e}")
 
     def _resize_frame_to_fullhd(self, frame):
         """Reduces frame resolution from 4K to Full HD (1920x1080)"""
@@ -60,21 +129,37 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
         return frame
 
     def _save_frame_to_database_if_needed(self, frame):
-        """Saves the current frame to database if one hour has passed"""
+        """Queues the current frame for database save if one hour has passed (non-blocking)"""
         current_time = time.time()
 
         if current_time - self.last_frame_save_time >= self.frame_save_interval:
             self.last_frame_save_time = current_time
-            success = self.db_handler.save_frame_to_database(frame)
-            if success:
+            try:
+                # Queue for background processing
+                frame_copy = copy.deepcopy(frame)
+                self.db_queue.put_nowait((frame_copy, 0.0, time.strftime('%Y-%m-%d_%H-%M-%S-%f')[:-3]))
                 timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
-                print(f"Frame saved to database at {timestamp}")
-            return success
+                print(f"✅ Hourly frame queued for database save at {timestamp}")
+                return True
+            except queue.Full:
+                print("⚠️  Database queue full, skipping hourly frame save")
+                return False
+            except Exception as e:
+                print(f"⚠️  Error queueing hourly frame save: {e}")
+                return False
 
         return False
 
-    def _process_detections(self, frame, detections, results):
-        """Processes the detections"""
+    def _process_detections(self, frame, detections, results, timestamp, timestamp_readable):
+        """Processes the detections with priority: MQTT first, then background tasks
+        
+        Args:
+            frame: The video frame
+            detections: List of detections
+            results: YOLO results object
+            timestamp: Timestamp string (generated BEFORE detection to avoid delay)
+            timestamp_readable: Human-readable timestamp
+        """
         for class_id, confidence, bbox in detections:
             class_name = self.detector.CLASS_NAMES.get(class_id, "Unknown")
             if confidence > self.config.confidence_threshold:
@@ -98,28 +183,23 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
             if annotated_frame is None:
                 continue
 
-            # Generate timestamp
-            timestamp = time.strftime('%Y-%m-%d_%H-%M-%S-%f')[:-3]
-            timestamp_readable = time.strftime('%Y-%m-%d %H:%M:%S')
+            # PRIORITY 1: Send MQTT message IMMEDIATELY (non-blocking, highest priority)
+            # This ensures the detection is reported as fast as possible
+            self.mqtt_handler.publish_detection(class_name, confidence, timestamp)
+            print(f'[{timestamp_readable}] 🚨 Detected: {class_name} (ID: {class_id}, Confidence: {confidence:.4f}) - MQTT sent')
 
-            # Save frame
+            # PRIORITY 2: Queue frame for background file saving (non-blocking)
             self._save_detection(annotated_frame, timestamp)
 
-            # Save detection image to database
-            success = self.db_handler.save_frame_to_database(
-                annotated_frame, confidence)
-            if success:
-                print(f"Detection image saved to database "
-                      f"(Confidence: {confidence:.2f})")
-            else:
-                print("Error saving detection image to database")
-
-            # Output information with timestamp and confidence
-            print(f'[{timestamp_readable}] Detected: {class_name} (ID: {class_id}, Confidence: {confidence:.4f})')
-
-            # Send MQTT message
-            self.mqtt_handler.publish_detection(class_name, confidence,
-                                               timestamp)
+            # PRIORITY 3: Queue database save for background (non-blocking)
+            try:
+                # Make a copy of the frame for the background thread
+                frame_copy = copy.deepcopy(annotated_frame)
+                self.db_queue.put_nowait((frame_copy, confidence, timestamp))
+            except queue.Full:
+                print("⚠️  Database queue full, skipping DB save (non-critical)")
+            except Exception as e:
+                print(f"⚠️  Error queueing database save: {e}")
 
     def run(self):
         """Main loop for stream processing"""
@@ -142,7 +222,7 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
             cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
             cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 15000)  # 15 second timeout
             cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000)  # 5 second read timeout (shorter for faster recovery)
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)  # Small buffer (2 frames) to balance latency and stability
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimal buffer (1 frame) to prevent delay accumulation
 
             if not cap.isOpened():
                 consecutive_failures += 1
@@ -162,17 +242,31 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
 
             # Process frames
             while cap.isOpened():
-                # Skip old frames in buffer to always get the latest frame
-                # This prevents delay accumulation when processing is slower than stream FPS
-                # Read frames quickly until we get the most recent one (max 2 attempts to avoid stream issues)
-                ret, frame = cap.read()
-                if ret:
-                    # Try to get a newer frame if available (only once to avoid overloading stream)
-                    # This ensures we process a relatively recent frame without breaking the connection
+                # Start timing for performance monitoring
+                frame_start_time = time.time()
+                
+                # Dynamic frame skipping based on processing performance
+                # Calculate how many frames to skip based on recent processing times
+                avg_processing_time = sum(self.processing_times) / len(self.processing_times) if self.processing_times else 0
+                if avg_processing_time > self.max_processing_time:
+                    # Processing is too slow, skip more frames
+                    max_frames_to_skip = min(int(avg_processing_time / self.max_processing_time) + 2, 10)
+                    if max_frames_to_skip > 5:
+                        print(f"⚠️  Slow processing detected (avg: {avg_processing_time:.2f}s), skipping up to {max_frames_to_skip} frames")
+                else:
+                    max_frames_to_skip = 3  # Normal: skip 3 frames to get latest
+                
+                ret, frame = None, None
+                frames_skipped = 0
+                
+                # Skip buffered frames to get the most recent one
+                for _ in range(max_frames_to_skip):
                     temp_ret, temp_frame = cap.read()
                     if temp_ret:
-                        # A newer frame was available, use that instead
                         ret, frame = temp_ret, temp_frame
+                        frames_skipped += 1
+                    else:
+                        break
                 
                 if not ret:
                     frame_read_failures += 1
@@ -187,26 +281,48 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 
                 # Reset failure counter on successful read
                 frame_read_failures = 0
+                
+                # Generate timestamp BEFORE processing to capture actual detection time
+                # This prevents delay accumulation from slow processing
+                timestamp = time.strftime('%Y-%m-%d_%H-%M-%S-%f')[:-3]
+                timestamp_readable = time.strftime('%Y-%m-%d %H:%M:%S')
 
                 # Reduce frame resolution from 4K to Full HD
                 frame = self._resize_frame_to_fullhd(frame)
 
-                # Save frame to database every hour
+                # Save frame to database every hour (non-blocking, in background)
                 self._save_frame_to_database_if_needed(frame)
 
-                # Object detection
+                # Object detection (this is the main blocking operation)
+                detection_start = time.time()
                 detections, results = self.detector.detect_objects(frame)
+                detection_time = time.time() - detection_start
 
                 # Debug: Print all detections before filtering
                 if detections:
-                    print(f"🔍 Found {len(detections)} detection(s) before filtering:")
+                    print(f"🔍 Found {len(detections)} detection(s) before filtering (detection took {detection_time:.3f}s):")
                     for class_id, confidence, bbox in detections:
                         class_name = self.detector.CLASS_NAMES.get(class_id, "Unknown")
                         print(f"   - {class_name} (ID: {class_id}, Confidence: {confidence:.4f}, Threshold: {self.config.confidence_threshold})")
 
-                # Process detections
+                # Process detections (pass timestamp from before detection)
+                # MQTT is sent immediately, DB and file save happen in background
                 if detections:
-                    self._process_detections(frame, detections, results)
+                    self._process_detections(frame, detections, results, timestamp, timestamp_readable)
+                
+                # Explicitly free YOLO results to prevent memory leaks
+                del results
+                del detections
+                
+                # Track processing time for dynamic frame skipping
+                total_processing_time = time.time() - frame_start_time
+                self.processing_times.append(total_processing_time)
+                if len(self.processing_times) > self.max_processing_times:
+                    self.processing_times.pop(0)  # Keep only last N times
+                
+                # Warn if processing is getting slow
+                if total_processing_time > 2.0:
+                    print(f"⚠️  Slow frame processing: {total_processing_time:.2f}s (target: <{self.max_processing_time:.2f}s)")
 
                 # Note: cv2.waitKey() removed - not needed in headless Docker container
                 # Container can be stopped with: docker stop katzenschreck
