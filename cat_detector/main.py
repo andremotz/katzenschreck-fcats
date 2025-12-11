@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cat_detector.config import Config
 from cat_detector.stream_processor import StreamProcessor
+from cat_detector.monitoring_server import start_monitoring_server
 
 
 class KatzenschreckApp:  # pylint: disable=too-few-public-methods
@@ -19,6 +20,19 @@ class KatzenschreckApp:  # pylint: disable=too-few-public-methods
         config_path = self._get_config_path()
         self.config = Config(config_path)
         self.processor = StreamProcessor(self.config, self.args.output_dir)
+        
+        # Start monitoring server if enabled
+        if self.config.monitoring_enabled:
+            monitoring_server = start_monitoring_server(
+                self.processor.monitoring_queue,
+                self.config,
+                self.processor,
+                host="0.0.0.0",
+                port=self.config.monitoring_port
+            )
+            # Store reference in processor for stats updates
+            self.processor.monitoring_server = monitoring_server
+            print(f"✅ Monitoring server started on port {self.config.monitoring_port}")
 
     def _get_config_path(self):
         """Determines the correct config.txt path (Docker or local)"""

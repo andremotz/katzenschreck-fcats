@@ -47,6 +47,11 @@ class Config:  # pylint: disable=too-few-public-methods,too-many-instance-attrib
 
         # Hardware type override (optional: jetson, raspberry_pi, generic)
         self.hardware_type = config.get('hardware_type')
+        
+        # Monitoring configuration
+        self.monitoring_enabled = config.get('monitoring_enabled', 'true').lower() == 'true'
+        self.monitoring_port = int(config.get('monitoring_port', 8080))
+        self.monitoring_fps = float(config.get('monitoring_fps', 5.0))
 
     def _validate_config(self):
         """Validates the configuration"""

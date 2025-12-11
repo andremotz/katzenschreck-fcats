@@ -33,3 +33,11 @@ camera_name=cam_teich
 # Hardware Type Override (optional) - Use when automatic detection fails (e.g., in Docker containers)
 # Valid values: jetson, raspberry_pi, generic
 # hardware_type=jetson
+
+# Monitoring Configuration (optional)
+# Enable/disable the web-based monitoring interface
+monitoring_enabled=true
+# Port for the monitoring web interface (default: 8080)
+monitoring_port=8080
+# Maximum frames per second for the monitoring stream (default: 5.0)
+monitoring_fps=5.0

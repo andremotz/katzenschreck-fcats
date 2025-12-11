@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Katzenschreck Monitoring</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .header h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .header .subtitle {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+        }
+        
+        @media (max-width: 968px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .video-container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .video-container h2 {
+            margin-bottom: 15px;
+            color: #667eea;
+        }
+        
+        .video-wrapper {
+            position: relative;
+            width: 100%;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .video-wrapper img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        
+        .stats-container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .stats-container h2 {
+            margin-bottom: 20px;
+            color: #667eea;
+        }
+        
+        .stat-item {
+            padding: 15px;
+            margin-bottom: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .stat-item:last-child {
+            margin-bottom: 0;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 5px;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .stat-value.small {
+            font-size: 18px;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-indicator.online {
+            background: #10b981;
+            box-shadow: 0 0 8px #10b981;
+        }
+        
+        .status-indicator.offline {
+            background: #ef4444;
+        }
+        
+        .detection-info {
+            background: #fff3cd;
+            border-left-color: #ffc107;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        
+        .detection-info .stat-label {
+            color: #856404;
+        }
+        
+        .detection-info .stat-value {
+            color: #856404;
+        }
+        
+        .no-detection {
+            color: #999;
+            font-style: italic;
+        }
+        
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+            color: white;
+            font-size: 12px;
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🐱 Katzenschreck Monitoring</h1>
+            <div class="subtitle">Real-Time Kamera-Überwachung mit Objekterkennung</div>
+        </div>
+        
+        <div class="main-content">
+            <div class="video-container">
+                <h2>Live Stream</h2>
+                <div class="video-wrapper">
+                    <img id="videoStream" src="/stream" alt="Video Stream">
+                </div>
+            </div>
+            
+            <div class="stats-container">
+                <h2>Statistiken</h2>
+                
+                <div class="stat-item">
+                    <div class="stat-label">
+                        <span class="status-indicator" id="statusIndicator"></span>
+                        Stream Status
+                    </div>
+                    <div class="stat-value small" id="streamStatus">Verbindung wird hergestellt...</div>
+                </div>
+                
+                <div class="stat-item">
+                    <div class="stat-label">Verarbeitungs-FPS</div>
+                    <div class="stat-value" id="fps">0.00</div>
+                </div>
+                
+                <div class="stat-item">
+                    <div class="stat-label">Durchschnittliche Verarbeitungszeit</div>
+                    <div class="stat-value small" id="avgProcessingTime">0.000s</div>
+                </div>
+                
+                <div class="stat-item">
+                    <div class="stat-label">Detections (letzte Minute)</div>
+                    <div class="stat-value" id="detectionsCount">0</div>
+                </div>
+                
+                <div class="stat-item">
+                    <div class="stat-label">Confidence Threshold</div>
+                    <div class="stat-value small" id="confidenceThreshold">0.00</div>
+                </div>
+                
+                <div class="stat-item">
+                    <div class="stat-label">Kamera Name</div>
+                    <div class="stat-value small" id="cameraName">-</div>
+                </div>
+                
+                <div class="stat-item detection-info" id="lastDetectionItem" style="display: none;">
+                    <div class="stat-label">Letzte Detection</div>
+                    <div class="stat-value small" id="lastDetectionTime">-</div>
+                    <div style="margin-top: 10px;">
+                        <div class="stat-label">Klasse</div>
+                        <div class="stat-value small" id="lastDetectionClass">-</div>
+                    </div>
+                    <div style="margin-top: 10px;">
+                        <div class="stat-label">Confidence</div>
+                        <div class="stat-value small" id="lastDetectionConfidence">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            Katzenschreck Monitoring System | Aktualisiert alle 2 Sekunden
+        </div>
+    </div>
+    
+    <script>
+        // Update statistics every 2 seconds
+        async function updateStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const data = await response.json();
+                
+                // Update FPS
+                document.getElementById('fps').textContent = data.fps.toFixed(2);
+                
+                // Update processing time
+                document.getElementById('avgProcessingTime').textContent = 
+                    data.avg_processing_time.toFixed(3) + 's';
+                
+                // Update detections count
+                document.getElementById('detectionsCount').textContent = 
+                    data.detections_count_1min;
+                
+                // Update confidence threshold
+                document.getElementById('confidenceThreshold').textContent = 
+                    data.confidence_threshold.toFixed(2);
+                
+                // Update camera name
+                document.getElementById('cameraName').textContent = 
+                    data.camera_name || '-';
+                
+                // Update stream status
+                const statusIndicator = document.getElementById('statusIndicator');
+                const streamStatus = document.getElementById('streamStatus');
+                
+                if (data.stream_connected) {
+                    statusIndicator.className = 'status-indicator online';
+                    streamStatus.textContent = 'Verbunden';
+                } else {
+                    statusIndicator.className = 'status-indicator offline';
+                    streamStatus.textContent = 'Getrennt';
+                }
+                
+                // Update last detection
+                const lastDetectionItem = document.getElementById('lastDetectionItem');
+                if (data.last_detection) {
+                    lastDetectionItem.style.display = 'block';
+                    document.getElementById('lastDetectionTime').textContent = 
+                        data.last_detection_time || '-';
+                    document.getElementById('lastDetectionClass').textContent = 
+                        data.last_detection.class_name || '-';
+                    document.getElementById('lastDetectionConfidence').textContent = 
+                        (data.last_detection.confidence * 100).toFixed(2) + '%';
+                } else {
+                    lastDetectionItem.style.display = 'none';
+                }
+                
+            } catch (error) {
+                console.error('Error fetching stats:', error);
+                document.getElementById('statusIndicator').className = 'status-indicator offline';
+                document.getElementById('streamStatus').textContent = 'Fehler beim Abrufen der Daten';
+            }
+        }
+        
+        // Handle video stream errors
+        document.getElementById('videoStream').addEventListener('error', function() {
+            console.error('Video stream error');
+            this.src = '/stream?' + new Date().getTime(); // Retry
+        });
+        
+        // Start updating stats
+        updateStats();
+        setInterval(updateStats, 2000);
+    </script>
+</body>
+</html>

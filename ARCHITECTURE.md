@@ -39,6 +39,7 @@ graph TB
             Detector[object_detector.py<br/>YOLO Detection]
             DB[database_handler.py<br/>Database Operations]
             MQTT[mqtt_handler.py<br/>MQTT Communication]
+            Monitor[monitoring_server.py<br/>Web Monitoring Interface]
         end
     end
     
@@ -61,6 +62,7 @@ graph TB
     Stream --> DB
     Stream --> MQTT
     Stream --> FileSystem
+    Stream --> Monitor
     
     Config -.-> Stream
     Config -.-> DB
@@ -77,7 +79,7 @@ graph TB
     classDef external fill:#fff3e0
     
     class Camera input
-    class Main,Config,Stream,Detector,DB,MQTT processing
+    class Main,Config,Stream,Detector,DB,MQTT,Monitor processing
     class MariaDB,FileSystem storage
     class MQTTBroker,SmartHome external
 ```
@@ -118,6 +120,13 @@ graph TB
 - Detection event publishing
 - Health monitoring (ping)
 - Message formatting
+
+#### 7. **monitoring_server.py** - Web Monitoring Interface
+- FastAPI-based HTTP server
+- MJPEG video streaming
+- Real-time statistics API
+- Web-based user interface
+- Thread-safe frame distribution
 
 ### Data Flow
 
@@ -187,7 +196,7 @@ detections_images Table:
 - **RTSP**: Camera stream access
 - **MQTT**: Port 1883 (unencrypted) or 8883 (TLS)
 - **Database**: Port 3306 (MariaDB/MySQL)
-- **HTTP/HTTPS**: Optional for web interfaces
+- **HTTP**: Port 8080 (default) for monitoring interface (configurable)
 
 ## Performance Characteristics
 
@@ -196,6 +205,7 @@ detections_images Table:
 - **Storage**: ~100KB per detection (with thumbnail)
 - **CPU Usage**: Moderate (YOLO inference)
 - **Memory**: ~500MB-2GB (model dependent)
+- **Monitoring Overhead**: Minimal (~5-10% additional CPU for web server, configurable FPS limit)
 
 ## Security Considerations
 

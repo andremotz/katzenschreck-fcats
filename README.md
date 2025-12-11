@@ -22,7 +22,8 @@ The inference script can run on a Raspberry Pi, but an accelerated device like a
 - **Database Storage**: Automatic frame storage every hour and detection images in MariaDB
 - **RTSP Stream Support**: Support for IP cameras with RTSP protocol
 - **Ignore Zones**: Configurable areas to be ignored
-- **Image Generation**: Automatic creation of 300px wide thumbnails & detection-images.
+- **Image Generation**: Automatic creation of 300px wide thumbnails & detection-images
+- **Real-Time Monitoring**: Web-based monitoring interface to view live camera stream with detections and statistics
 
 ## Installation & Setup
 
@@ -99,12 +100,14 @@ python main.py <output_folder>
 │  (RTSP Stream)  │───▶│     System      │───▶│   Database      │───▶│   Desktop-App   │
 └─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
                               │
-                              ▼
-                       ┌─────────────────┐
-                       │  MQTT Broker    │
-                       │  (Notifications)│
-                       └─────────────────┘
-                              │
+                              ├─────────────────┐
+                              │                 │
+                              ▼                 ▼
+                       ┌─────────────────┐  ┌─────────────────┐
+                       │  MQTT Broker    │  │  Web Monitoring │
+                       │  (Notifications)│  │  Interface      │
+                       └─────────────────┘  │  (Port 8080)     │
+                              │             └─────────────────┘
                               ▼
                        ┌─────────────────┐
                        │  Smart Home     │
@@ -127,6 +130,7 @@ graph TB
             Detector[object_detector.py<br/>YOLO Detection]
             DB[database_handler.py<br/>Database Ops]
             MQTT[mqtt_handler.py<br/>MQTT Comm]
+            Monitor[monitoring_server.py<br/>Web Interface]
         end
     end
     
@@ -145,6 +149,7 @@ graph TB
     Stream --> DB
     Stream --> MQTT
     Stream --> FileSystem
+    Stream --> Monitor
     Config -.-> Stream
     Config -.-> DB
     Config -.-> MQTT
@@ -163,6 +168,29 @@ The `config.txt` should contain the following parameters:
 - **MQTT**: `mqtt_broker_url`, `mqtt_topic`, etc.
 - **Database**: `db_host`, `db_user`, `db_password`, `db_database`
 - **Object Detection**: `confidence_threshold`, `ignore_zone`
+- **Monitoring** (optional): `monitoring_enabled`, `monitoring_port`, `monitoring_fps`
+
+### Monitoring Configuration
+
+The system includes a built-in web-based monitoring interface that allows you to view the live camera stream with detections in real-time from any device in your local network.
+
+To enable monitoring, add these settings to your `config.txt`:
+```
+monitoring_enabled=true
+monitoring_port=8080
+monitoring_fps=5.0
+```
+
+Once enabled, access the monitoring interface at:
+```
+http://<IP-Adresse>:8080
+```
+
+The monitoring interface displays:
+- Live video stream with annotated detections
+- Real-time statistics (FPS, processing time, detection count)
+- Last detection information (class, confidence, timestamp)
+- System status indicators
 
 ## Database Schema
 
@@ -182,6 +210,7 @@ The application is organized into modular components:
 - **`database_handler.py`**: Database operations and thumbnail creation
 - **`object_detector.py`**: YOLO-based cat detection
 - **`stream_processor.py`**: Video stream processing coordination
+- **`monitoring_server.py`**: Web-based real-time monitoring interface
 - **`main.py`**: Application entry point
 
 ## Detection Logic
@@ -196,7 +225,7 @@ The application is organized into modular components:
 ### DevOps & Infrastructure
 - [ ] Verify Docker container functionality
 - [ ] Set up CI/CD pipeline (GitHub Actions/GitLab CI)
-- [*] Implement health checks and monitoring endpoints
+- [x] Implement health checks and monitoring endpoints
 - [ ] Add Prometheus metrics collection
 - [ ] Create Kubernetes deployment manifests
 - [ ] Add environment-specific configurations (different locations!)

@@ -43,6 +43,7 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
         # Background task queues for non-blocking operations
         self.db_queue = queue.Queue(maxsize=10)  # Limit queue size to prevent memory issues
         self.file_queue = queue.Queue(maxsize=10)
+        self.monitoring_queue = queue.Queue(maxsize=5)  # Monitoring queue (smaller to reduce memory)
         
         # Start background worker threads
         self._start_background_workers()
@@ -109,6 +110,32 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
             print("⚠️  File queue full, skipping frame save (non-critical)")
         except Exception as e:
             print(f"⚠️  Error queueing frame save: {e}")
+    
+    def _send_to_monitoring(self, annotated_frame):
+        """Sends frame to monitoring queue (non-blocking)"""
+        try:
+            # Make a copy for monitoring (smaller resolution for efficiency)
+            # Resize to max 1280x720 for monitoring to reduce bandwidth
+            height, width = annotated_frame.shape[:2]
+            if width > 1280:
+                scale = 1280 / width
+                new_width = 1280
+                new_height = int(height * scale)
+                frame_copy = cv2.resize(annotated_frame, (new_width, new_height),
+                                       interpolation=cv2.INTER_AREA)
+            else:
+                frame_copy = copy.deepcopy(annotated_frame)
+            
+            self.monitoring_queue.put_nowait(frame_copy)
+        except queue.Full:
+            # Queue full - remove oldest frame and add new one
+            try:
+                self.monitoring_queue.get_nowait()
+                self.monitoring_queue.put_nowait(frame_copy)
+            except queue.Empty:
+                pass
+        except Exception as e:
+            print(f"⚠️  Error queueing frame for monitoring: {e}")
 
     def _resize_frame_to_fullhd(self, frame):
         """Reduces frame resolution from 4K to Full HD (1920x1080)"""
@@ -187,6 +214,16 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
             # This ensures the detection is reported as fast as possible
             self.mqtt_handler.publish_detection(class_name, confidence, timestamp)
             print(f'[{timestamp_readable}] 🚨 Detected: {class_name} (ID: {class_id}, Confidence: {confidence:.4f}) - MQTT sent')
+            
+            # Update monitoring server stats with detection info
+            if hasattr(self, 'monitoring_server') and self.monitoring_server:
+                detection_info = {
+                    'class_name': class_name,
+                    'class_id': class_id,
+                    'confidence': confidence,
+                    'timestamp': timestamp_readable
+                }
+                self.monitoring_server.update_stats(detection_info)
 
             # PRIORITY 2: Queue frame for background file saving (non-blocking)
             self._save_detection(annotated_frame, timestamp)
@@ -297,6 +334,17 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 detection_start = time.time()
                 detections, results = self.detector.detect_objects(frame)
                 detection_time = time.time() - detection_start
+                
+                # Create annotated frame for monitoring (even if no detections)
+                annotated_frame = None
+                if results:
+                    for result in results:
+                        annotated_frame = result.plot()
+                        break
+                
+                # If no annotated frame available, use original frame
+                if annotated_frame is None:
+                    annotated_frame = frame.copy()
 
                 # Debug: Print all detections before filtering
                 if detections:
@@ -309,6 +357,9 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 # MQTT is sent immediately, DB and file save happen in background
                 if detections:
                     self._process_detections(frame, detections, results, timestamp, timestamp_readable)
+                
+                # Send frame to monitoring queue (non-blocking)
+                self._send_to_monitoring(annotated_frame)
                 
                 # Explicitly free YOLO results to prevent memory leaks
                 del results
