@@ -81,19 +81,29 @@ class MonitoringServer:
         @self.app.get("/api/stats")
         async def get_stats():
             """Get current statistics as JSON"""
-            with self.stats_lock:
-                # Calculate FPS from processing times
+            # Calculate FPS from processing times (thread-safe access)
+            # Use the processing_times_lock from stream_processor to synchronize access
+            with self.stream_processor.processing_times_lock:
+                # Create a copy of the list to avoid holding the lock during calculation
+                # This prevents "RuntimeError: list changed size during iteration"
                 if self.stream_processor.processing_times:
-                    avg_processing_time = sum(self.stream_processor.processing_times) / len(
-                        self.stream_processor.processing_times
-                    )
-                    if avg_processing_time > 0:
-                        fps = 1.0 / avg_processing_time
-                    else:
-                        fps = 0.0
+                    processing_times_copy = list(self.stream_processor.processing_times)
+                else:
+                    processing_times_copy = []
+            
+            # Calculate FPS outside the lock to minimize lock time
+            if processing_times_copy:
+                avg_processing_time = sum(processing_times_copy) / len(processing_times_copy)
+                if avg_processing_time > 0:
+                    fps = 1.0 / avg_processing_time
                 else:
                     fps = 0.0
-                    avg_processing_time = 0.0
+            else:
+                fps = 0.0
+                avg_processing_time = 0.0
+            
+            # Clean old detection timestamps (older than 1 minute)
+            with self.stats_lock:
                 
                 # Clean old detection timestamps (older than 1 minute)
                 current_time = time.time()

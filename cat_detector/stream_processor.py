@@ -39,6 +39,7 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
         self.max_processing_times = 10  # Keep last 10 processing times
         self.target_fps = 1.0  # Target: process at least 1 frame per second
         self.max_processing_time = 1.0 / self.target_fps  # Max 1 second per frame
+        self.processing_times_lock = threading.Lock()  # Lock for thread-safe access to processing_times
 
         # Background task queues for non-blocking operations
         self.db_queue = queue.Queue(maxsize=10)  # Limit queue size to prevent memory issues
