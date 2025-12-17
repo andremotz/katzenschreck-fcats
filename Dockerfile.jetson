@@ -35,6 +35,9 @@ RUN pip install --no-cache-dir \
 COPY cat_detector/ /katzenschreck/cat_detector/
 COPY config.txt /katzenschreck/config.txt
 
+# Copy trained models directory
+COPY runs/ /katzenschreck/runs/
+
 # Create results directory
 RUN mkdir -p /katzenschreck/results
 
