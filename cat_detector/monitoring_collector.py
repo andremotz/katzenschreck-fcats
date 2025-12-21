@@ -47,7 +47,8 @@ class MonitoringCollector:
             'mqtt_publish': 0.0,
             'db_queue_wait': 0.0,
             'file_queue_wait': 0.0,
-            'total': 0.0
+            'total': 0.0,
+            'frame_age': 0.0  # Age of frame when processed (time between capture and processing)
         }
         
         # System status
@@ -55,6 +56,8 @@ class MonitoringCollector:
         self._last_frame_time = 0.0
         self._frames_skipped = 0
         self._total_frames_processed = 0
+        self._frame_age = 0.0  # Current frame age in seconds
+        self._frame_age_history = deque(maxlen=max_history)  # History of frame ages
 
     def update_frame(self, frame, timestamp: Optional[float] = None):
         """Update the current frame (JPEG encoded for web display)
@@ -104,9 +107,26 @@ class MonitoringCollector:
                 - db_queue_wait: Time waiting in DB queue
                 - file_queue_wait: Time waiting in file queue
                 - total: Total processing time
+                - frame_age: Age of frame when processed (optional)
         """
         with self._lock:
             self._timing_breakdown.update(timing)
+            # Track frame age if provided
+            if 'frame_age' in timing:
+                self._frame_age = timing['frame_age']
+                self._frame_age_history.append(timing['frame_age'])
+
+    def update_frame_age(self, frame_age: float):
+        """Update the current frame age
+        
+        Args:
+            frame_age: Age of the current frame in seconds (time between capture and now)
+        """
+        with self._lock:
+            self._frame_age = frame_age
+            self._frame_age_history.append(frame_age)
+            # Also update timing breakdown
+            self._timing_breakdown['frame_age'] = frame_age
 
     def add_detection(self, class_name: str, confidence: float, bbox: List[float], 
                      timestamp: str, detection_time: float):
@@ -192,6 +212,12 @@ class MonitoringCollector:
             
             uptime = time.time() - self._start_time
             
+            # Calculate frame age statistics
+            frame_age_list = list(self._frame_age_history)
+            avg_frame_age = (sum(frame_age_list) / len(frame_age_list) 
+                           if frame_age_list else 0.0)
+            max_frame_age = max(frame_age_list) if frame_age_list else 0.0
+            
             return {
                 'fps': avg_fps,
                 'current_fps': fps_list[-1] if fps_list else 0.0,
@@ -202,7 +228,10 @@ class MonitoringCollector:
                 'frames_skipped': self._frames_skipped,
                 'uptime': uptime,
                 'is_streaming': self._is_streaming,
-                'last_frame_time': self._last_frame_time
+                'last_frame_time': self._last_frame_time,
+                'frame_age': self._frame_age,
+                'avg_frame_age': avg_frame_age,
+                'max_frame_age': max_frame_age
             }
 
     def get_detections(self, limit: int = 10) -> List[Dict[str, Any]]:

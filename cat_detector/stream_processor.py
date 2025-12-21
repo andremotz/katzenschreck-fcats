@@ -18,6 +18,7 @@ from cat_detector.database_handler import DatabaseHandler
 from cat_detector.results_cleanup import cleanup_results_folder
 from cat_detector.monitoring_collector import MonitoringCollector
 from cat_detector.monitoring_server import MonitoringServer
+from cat_detector.rtsp_stream_reader import RTSPStreamReader
 
 
 class StreamProcessor:  # pylint: disable=too-few-public-methods
@@ -36,12 +37,15 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
         self.last_frame_save_time = 0
         self.frame_save_interval = 3600  # 3600 seconds = 1 hour
 
-        # Performance monitoring for dynamic frame skipping
+        # Performance monitoring
         self.processing_times = []  # Track last N processing times
         self.max_processing_times = 10  # Keep last 10 processing times
         self.target_fps = 1.0  # Target: process at least 1 frame per second
         self.max_processing_time = 1.0 / self.target_fps  # Max 1 second per frame
         self._total_frames_processed = 0  # Track total frames for monitoring frame updates
+        
+        # RTSP Stream Reader (will be initialized in run())
+        self.stream_reader = None
 
         # Background task queues for non-blocking operations
         self.db_queue = queue.Queue(maxsize=10)  # Limit queue size to prevent memory issues
@@ -278,181 +282,163 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 print(f"⚠️  Error queueing database save: {e}")
 
     def run(self):
-        """Main loop for stream processing"""
-        retry_delay = 5
-        max_retry_delay = 60
-        consecutive_failures = 0
+        """Main loop for stream processing using threaded RTSP reader"""
+        print(f"🎥 Initializing RTSP stream reader: {self.config.rtsp_stream_url}")
+        print(f"   Transport: {self.config.rtsp_transport}, Low delay: {self.config.rtsp_low_delay}")
         
+        # Initialize RTSP stream reader
+        self.stream_reader = RTSPStreamReader(
+            self.config.rtsp_stream_url,
+            transport=self.config.rtsp_transport,
+            low_delay=self.config.rtsp_low_delay
+        )
+        
+        # Wait a bit for the reader to connect
+        time.sleep(2)
+        
+        # Update monitoring: streaming started
+        if self.monitoring_collector:
+            self.monitoring_collector.set_streaming_status(True)
+        
+        consecutive_no_frame_count = 0
+        max_consecutive_no_frame = 30  # Allow up to 30 attempts without frame before warning
+        
+        # Main processing loop
         while True:
-            print(f"🎥 Attempting to connect to RTSP stream: {self.config.rtsp_stream_url}")
+            # Start timing for performance monitoring
+            frame_start_time = time.time()
+            timing_breakdown = {
+                'frame_read': 0.0,
+                'resize': 0.0,
+                'detection': 0.0,
+                'mqtt_publish': 0.0,
+                'db_queue_wait': 0.0,
+                'file_queue_wait': 0.0,
+                'total': 0.0,
+                'frame_age': 0.0
+            }
             
-            # Set OpenCV RTSP options for faster timeout and better compatibility
-            # Use FFmpeg backend with low-latency RTSP options
-            rtsp_url = self.config.rtsp_stream_url
-            # Add FFmpeg options for low latency: drop old frames and use TCP for reliability
-            if '?' not in rtsp_url:
-                rtsp_url += '?rtsp_transport=tcp&buffer_size=1'
-            else:
-                rtsp_url += '&rtsp_transport=tcp&buffer_size=1'
+            # Get latest frame from reader (thread-safe, always returns newest)
+            frame_read_start = time.time()
+            frame_result = self.stream_reader.get_latest_frame()
+            frame_read_time = time.time() - frame_read_start
+            timing_breakdown['frame_read'] = frame_read_time
             
-            cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
-            cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 15000)  # 15 second timeout
-            cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000)  # 5 second read timeout (shorter for faster recovery)
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimal buffer (1 frame) to prevent delay accumulation
-
-            if not cap.isOpened():
-                consecutive_failures += 1
-                print(f"❌ Failed to open RTSP stream (attempt #{consecutive_failures})")
-                print(f"   Retrying in {retry_delay} seconds...")
-                time.sleep(retry_delay)
-                
-                # Exponential backoff: increase delay after each failure
-                retry_delay = min(retry_delay * 1.5, max_retry_delay)
+            # Check if we got a frame
+            if frame_result is None:
+                consecutive_no_frame_count += 1
+                if consecutive_no_frame_count >= max_consecutive_no_frame:
+                    if not self.stream_reader.is_connected():
+                        print("⚠️  RTSP Reader not connected, waiting for reconnection...")
+                    consecutive_no_frame_count = 0  # Reset counter
+                time.sleep(0.1)  # Short sleep to avoid busy waiting
                 continue
-
-            print("✅ RTSP stream connection established successfully")
-            consecutive_failures = 0
-            retry_delay = 5  # Reset retry delay on success
-            frame_read_failures = 0
-            max_frame_failures = 10
             
-            # Update monitoring: streaming started
+            # Extract frame data
+            ret, frame, frame_timestamp, frame_number = frame_result
+            
+            if not ret or frame is None:
+                consecutive_no_frame_count += 1
+                time.sleep(0.1)
+                continue
+            
+            # Reset no-frame counter on successful read
+            consecutive_no_frame_count = 0
+            
+            # Calculate frame age (time between capture and now)
+            frame_age = time.time() - frame_timestamp
+            timing_breakdown['frame_age'] = frame_age
+            
+            # Warn if frame is too old (indicates drift)
+            if frame_age > 2.0:
+                print(f"⚠️  Old frame detected: {frame_age:.2f}s old (Frame #{frame_number})")
+            
+            # Update monitoring with frame age
             if self.monitoring_collector:
-                self.monitoring_collector.set_streaming_status(True)
+                self.monitoring_collector.update_frame_age(frame_age)
+                # Update statistics from reader
+                stats = self.stream_reader.get_statistics()
+                if stats.get('frames_dropped', 0) > 0:
+                    self.monitoring_collector.increment_frames_skipped(stats['frames_dropped'])
+            
+            # Generate timestamp BEFORE processing to capture actual detection time
+            timestamp = time.strftime('%Y-%m-%d_%H-%M-%S-%f')[:-3]
+            timestamp_readable = time.strftime('%Y-%m-%d %H:%M:%S')
 
-            # Process frames
-            while cap.isOpened():
-                # Start timing for performance monitoring
-                frame_start_time = time.time()
-                timing_breakdown = {
-                    'frame_read': 0.0,
-                    'resize': 0.0,
-                    'detection': 0.0,
-                    'mqtt_publish': 0.0,
-                    'db_queue_wait': 0.0,
-                    'file_queue_wait': 0.0,
-                    'total': 0.0
-                }
-                
-                # Dynamic frame skipping based on processing performance
-                # Calculate how many frames to skip based on recent processing times
-                avg_processing_time = sum(self.processing_times) / len(self.processing_times) if self.processing_times else 0
-                if avg_processing_time > self.max_processing_time:
-                    # Processing is too slow, skip more frames
-                    max_frames_to_skip = min(int(avg_processing_time / self.max_processing_time) + 2, 10)
-                    if max_frames_to_skip > 5:
-                        print(f"⚠️  Slow processing detected (avg: {avg_processing_time:.2f}s), skipping up to {max_frames_to_skip} frames")
-                else:
-                    max_frames_to_skip = 3  # Normal: skip 3 frames to get latest
-                
-                # Time frame reading
-                frame_read_start = time.time()
-                ret, frame = None, None
-                frames_skipped = 0
-                
-                # Skip buffered frames to get the most recent one
-                for _ in range(max_frames_to_skip):
-                    temp_ret, temp_frame = cap.read()
-                    if temp_ret:
-                        ret, frame = temp_ret, temp_frame
-                        frames_skipped += 1
-                    else:
-                        break
-                
-                frame_read_time = time.time() - frame_read_start
-                timing_breakdown['frame_read'] = frame_read_time
-                
-                if not ret:
-                    frame_read_failures += 1
-                    print(f"⚠️  Failed to read frame ({frame_read_failures}/{max_frame_failures})")
-                    
-                    if frame_read_failures >= max_frame_failures:
-                        print("❌ Too many frame read failures. Reconnecting...")
-                        if self.monitoring_collector:
-                            self.monitoring_collector.set_streaming_status(False)
-                        break
-                    
-                    time.sleep(0.5)
-                    continue
-                
-                # Reset failure counter on successful read
-                frame_read_failures = 0
-                
-                # Update monitoring: frames skipped
-                if frames_skipped > 0 and self.monitoring_collector:
-                    self.monitoring_collector.increment_frames_skipped(frames_skipped)
-                
-                # Generate timestamp BEFORE processing to capture actual detection time
-                # This prevents delay accumulation from slow processing
-                timestamp = time.strftime('%Y-%m-%d_%H-%M-%S-%f')[:-3]
-                timestamp_readable = time.strftime('%Y-%m-%d %H:%M:%S')
+            # Reduce frame resolution from 4K to Full HD
+            resize_start = time.time()
+            frame = self._resize_frame_to_fullhd(frame)
+            resize_time = time.time() - resize_start
+            timing_breakdown['resize'] = resize_time
+            
+            # Update frame in monitoring (every 5th frame to reduce overhead)
+            if self.monitoring_collector and self._total_frames_processed % 5 == 0:
+                self.monitoring_collector.update_frame(frame, frame_timestamp)
 
-                # Reduce frame resolution from 4K to Full HD
-                frame = self._resize_frame_to_fullhd(frame)
-                
-                # Update frame in monitoring (every 5th frame to reduce overhead)
-                if self.monitoring_collector and self._total_frames_processed % 5 == 0:
-                    self.monitoring_collector.update_frame(frame, time.time())
+            # Save frame to database every hour (non-blocking, in background)
+            self._save_frame_to_database_if_needed(frame)
 
-                # Save frame to database every hour (non-blocking, in background)
-                self._save_frame_to_database_if_needed(frame)
+            # Object detection (this is the main blocking operation)
+            detection_start = time.time()
+            detections, results = self.detector.detect_objects(frame)
+            detection_time = time.time() - detection_start
+            timing_breakdown['detection'] = detection_time
 
-                # Object detection (this is the main blocking operation)
-                detection_start = time.time()
-                detections, results = self.detector.detect_objects(frame)
-                detection_time = time.time() - detection_start
-                timing_breakdown['detection'] = detection_time
+            # Debug: Print all detections before filtering
+            if detections:
+                print(f"🔍 Found {len(detections)} detection(s) before filtering "
+                      f"(detection took {detection_time:.3f}s, frame age: {frame_age:.3f}s):")
+                for class_id, confidence, bbox in detections:
+                    class_name = self.detector.CLASS_NAMES.get(class_id, "Unknown")
+                    print(f"   - {class_name} (ID: {class_id}, Confidence: {confidence:.4f}, "
+                          f"Threshold: {self.config.confidence_threshold})")
 
-                # Debug: Print all detections before filtering
-                if detections:
-                    print(f"🔍 Found {len(detections)} detection(s) before filtering (detection took {detection_time:.3f}s):")
-                    for class_id, confidence, bbox in detections:
-                        class_name = self.detector.CLASS_NAMES.get(class_id, "Unknown")
-                        print(f"   - {class_name} (ID: {class_id}, Confidence: {confidence:.4f}, Threshold: {self.config.confidence_threshold})")
-
-                # Process detections (pass timestamp from before detection)
-                # MQTT is sent immediately, DB and file save happen in background
-                if detections:
-                    self._process_detections(frame, detections, results, timestamp, timestamp_readable, detection_time)
-                
-                # Explicitly free YOLO results to prevent memory leaks
-                del results
-                del detections
-                
-                # Track processing time for dynamic frame skipping
-                total_processing_time = time.time() - frame_start_time
-                timing_breakdown['total'] = total_processing_time
-                
-                # Increment frame counter
-                self._total_frames_processed += 1
-                
-                # Update monitoring with all timing information
-                if self.monitoring_collector:
-                    self.monitoring_collector.update_timing_breakdown(timing_breakdown)
-                    self.monitoring_collector.update_processing_time(total_processing_time)
-                    # Update queue status
-                    self.monitoring_collector.update_queue_status(
-                        self.db_queue.qsize(),
-                        0.0,  # Will be updated by workers
-                        self.file_queue.qsize(),
-                        0.0   # Will be updated by workers
-                    )
-                
-                self.processing_times.append(total_processing_time)
-                if len(self.processing_times) > self.max_processing_times:
-                    self.processing_times.pop(0)  # Keep only last N times
-                
-                # Warn if processing is getting slow
-                if total_processing_time > 2.0:
-                    print(f"⚠️  Slow frame processing: {total_processing_time:.2f}s (target: <{self.max_processing_time:.2f}s)")
-
-                # Note: cv2.waitKey() removed - not needed in headless Docker container
-                # Container can be stopped with: docker stop katzenschreck
-
-            cap.release()
+            # Process detections (pass timestamp from before detection)
+            # MQTT is sent immediately, DB and file save happen in background
+            if detections:
+                self._process_detections(frame, detections, results, timestamp, timestamp_readable, detection_time)
+            
+            # Explicitly free YOLO results to prevent memory leaks
+            del results
+            del detections
+            
+            # Track processing time
+            total_processing_time = time.time() - frame_start_time
+            timing_breakdown['total'] = total_processing_time
+            
+            # Increment frame counter
+            self._total_frames_processed += 1
+            
+            # Update monitoring with all timing information
             if self.monitoring_collector:
-                self.monitoring_collector.set_streaming_status(False)
-            print("🔄 Stream disconnected. Attempting to reconnect...")
+                self.monitoring_collector.update_timing_breakdown(timing_breakdown)
+                self.monitoring_collector.update_processing_time(total_processing_time)
+                # Update queue status
+                self.monitoring_collector.update_queue_status(
+                    self.db_queue.qsize(),
+                    0.0,  # Will be updated by workers
+                    self.file_queue.qsize(),
+                    0.0   # Will be updated by workers
+                )
+            
+            self.processing_times.append(total_processing_time)
+            if len(self.processing_times) > self.max_processing_times:
+                self.processing_times.pop(0)  # Keep only last N times
+            
+            # Warn if processing is getting slow
+            if total_processing_time > 2.0:
+                print(f"⚠️  Slow frame processing: {total_processing_time:.2f}s "
+                      f"(target: <{self.max_processing_time:.2f}s, frame age: {frame_age:.3f}s)")
+            
+            # Small sleep to prevent CPU spinning (reader thread handles frame updates)
+            # This allows the reader thread to keep the buffer clean
+            time.sleep(0.01)
 
+        # Cleanup (should never reach here, but just in case)
+        if self.stream_reader:
+            self.stream_reader.stop()
+        if self.monitoring_collector:
+            self.monitoring_collector.set_streaming_status(False)
+        
         print(f'Frames with detected objects are saved in folder '
               f'"{self.output_dir}".')

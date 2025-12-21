@@ -20,6 +20,12 @@ class Config:  # pylint: disable=too-few-public-methods,too-many-instance-attrib
 
         # RTSP and MQTT configuration
         self.rtsp_stream_url = config.get('rtsp_stream_url')
+        # RTSP transport options (udp/tcp, default: udp for lower latency)
+        self.rtsp_transport = config.get('rtsp_transport', 'udp').lower()
+        if self.rtsp_transport not in ['udp', 'tcp']:
+            self.rtsp_transport = 'udp'  # Default to UDP
+        # RTSP low delay mode (default: true)
+        self.rtsp_low_delay = config.get('rtsp_low_delay', 'true').lower() == 'true'
         self.mqtt_broker_url = config.get('mqtt_broker_url')
         self.mqtt_broker_port = int(config.get('mqtt_broker_port', 1883))
         self.mqtt_topic = config.get('mqtt_topic')
