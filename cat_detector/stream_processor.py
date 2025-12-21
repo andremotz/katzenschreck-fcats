@@ -16,6 +16,8 @@ from cat_detector.object_detector import ObjectDetector
 from cat_detector.mqtt_handler import MQTTHandler
 from cat_detector.database_handler import DatabaseHandler
 from cat_detector.results_cleanup import cleanup_results_folder
+from cat_detector.monitoring_collector import MonitoringCollector
+from cat_detector.monitoring_server import MonitoringServer
 
 
 class StreamProcessor:  # pylint: disable=too-few-public-methods
@@ -39,10 +41,20 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
         self.max_processing_times = 10  # Keep last 10 processing times
         self.target_fps = 1.0  # Target: process at least 1 frame per second
         self.max_processing_time = 1.0 / self.target_fps  # Max 1 second per frame
+        self._total_frames_processed = 0  # Track total frames for monitoring frame updates
 
         # Background task queues for non-blocking operations
         self.db_queue = queue.Queue(maxsize=10)  # Limit queue size to prevent memory issues
         self.file_queue = queue.Queue(maxsize=10)
+        
+        # Monitoring setup (if enabled)
+        self.monitoring_collector = None
+        self.monitoring_server = None
+        if config.monitoring_enabled:
+            self.monitoring_collector = MonitoringCollector()
+            self.monitoring_server = MonitoringServer(self.monitoring_collector, config.monitoring_port)
+            self.monitoring_server.start()
+            print(f"✅ Monitoring enabled on port {config.monitoring_port}")
         
         # Start background worker threads
         self._start_background_workers()
@@ -67,14 +79,34 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
         """Background worker thread for database operations"""
         while True:
             try:
+                task_start_time = time.time()
                 task = self.db_queue.get(timeout=1)
                 if task is None:  # Shutdown signal
                     break
+                queue_wait_time = time.time() - task_start_time
                 frame, confidence, timestamp = task
                 self.db_handler.save_frame_to_database(frame, confidence)
                 print(f"✅ Background: Detection image saved to database (Confidence: {confidence:.2f})")
+                
+                # Update monitoring with queue wait time
+                if self.monitoring_collector:
+                    self.monitoring_collector.update_queue_status(
+                        self.db_queue.qsize(),
+                        queue_wait_time,
+                        self.file_queue.qsize(),
+                        0.0  # File queue wait time updated in file_worker
+                    )
+                
                 self.db_queue.task_done()
             except queue.Empty:
+                # Update monitoring even when queue is empty
+                if self.monitoring_collector:
+                    self.monitoring_collector.update_queue_status(
+                        self.db_queue.qsize(),
+                        0.0,
+                        self.file_queue.qsize(),
+                        0.0
+                    )
                 continue
             except Exception as e:
                 print(f"⚠️  Database worker error: {e}")
@@ -84,16 +116,36 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
         """Background worker thread for file operations"""
         while True:
             try:
+                task_start_time = time.time()
                 task = self.file_queue.get(timeout=1)
                 if task is None:  # Shutdown signal
                     break
+                queue_wait_time = time.time() - task_start_time
                 annotated_frame, timestamp = task
                 cleanup_results_folder(self.output_dir, self.config.usage_threshold)
                 output_file = f'{self.output_dir}/frame_{timestamp}.jpg'
                 cv2.imwrite(output_file, annotated_frame)
                 print(f"✅ Background: Frame saved to {output_file}")
+                
+                # Update monitoring with queue wait time
+                if self.monitoring_collector:
+                    self.monitoring_collector.update_queue_status(
+                        self.db_queue.qsize(),
+                        0.0,  # DB queue wait time updated in db_worker
+                        self.file_queue.qsize(),
+                        queue_wait_time
+                    )
+                
                 self.file_queue.task_done()
             except queue.Empty:
+                # Update monitoring even when queue is empty
+                if self.monitoring_collector:
+                    self.monitoring_collector.update_queue_status(
+                        self.db_queue.qsize(),
+                        0.0,
+                        self.file_queue.qsize(),
+                        0.0
+                    )
                 continue
             except Exception as e:
                 print(f"⚠️  File worker error: {e}")
@@ -112,6 +164,7 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
 
     def _resize_frame_to_fullhd(self, frame):
         """Reduces frame resolution from 4K to Full HD (1920x1080)"""
+        resize_start = time.time()
         height, width = frame.shape[:2]
 
         # Target resolution: Full HD (1920x1080)
@@ -124,8 +177,19 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                                      interpolation=cv2.INTER_AREA)
             print(f"Frame resized from {width}x{height} to "
                   f"{target_width}x{target_height}")
+            resize_time = time.time() - resize_start
+            # Update monitoring
+            if self.monitoring_collector:
+                timing = self.monitoring_collector.get_timing_breakdown()
+                timing['resize'] = resize_time
+                self.monitoring_collector.update_timing_breakdown(timing)
             return resized_frame
         # Frame is already Full HD or smaller
+        resize_time = time.time() - resize_start
+        if self.monitoring_collector:
+            timing = self.monitoring_collector.get_timing_breakdown()
+            timing['resize'] = resize_time
+            self.monitoring_collector.update_timing_breakdown(timing)
         return frame
 
     def _save_frame_to_database_if_needed(self, frame):
@@ -150,7 +214,7 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
 
         return False
 
-    def _process_detections(self, frame, detections, results, timestamp, timestamp_readable):
+    def _process_detections(self, frame, detections, results, timestamp, timestamp_readable, detection_time: float):
         """Processes the detections with priority: MQTT first, then background tasks
         
         Args:
@@ -159,6 +223,7 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
             results: YOLO results object
             timestamp: Timestamp string (generated BEFORE detection to avoid delay)
             timestamp_readable: Human-readable timestamp
+            detection_time: Time taken for detection in seconds
         """
         for class_id, confidence, bbox in detections:
             class_name = self.detector.CLASS_NAMES.get(class_id, "Unknown")
@@ -185,8 +250,19 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
 
             # PRIORITY 1: Send MQTT message IMMEDIATELY (non-blocking, highest priority)
             # This ensures the detection is reported as fast as possible
+            mqtt_start = time.time()
             self.mqtt_handler.publish_detection(class_name, confidence, timestamp)
+            mqtt_time = time.time() - mqtt_start
             print(f'[{timestamp_readable}] 🚨 Detected: {class_name} (ID: {class_id}, Confidence: {confidence:.4f}) - MQTT sent')
+            
+            # Update monitoring with detection and MQTT timing
+            if self.monitoring_collector:
+                self.monitoring_collector.add_detection(
+                    class_name, confidence, bbox, timestamp, detection_time
+                )
+                timing = self.monitoring_collector.get_timing_breakdown()
+                timing['mqtt_publish'] = mqtt_time
+                self.monitoring_collector.update_timing_breakdown(timing)
 
             # PRIORITY 2: Queue frame for background file saving (non-blocking)
             self._save_detection(annotated_frame, timestamp)
@@ -239,11 +315,24 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
             retry_delay = 5  # Reset retry delay on success
             frame_read_failures = 0
             max_frame_failures = 10
+            
+            # Update monitoring: streaming started
+            if self.monitoring_collector:
+                self.monitoring_collector.set_streaming_status(True)
 
             # Process frames
             while cap.isOpened():
                 # Start timing for performance monitoring
                 frame_start_time = time.time()
+                timing_breakdown = {
+                    'frame_read': 0.0,
+                    'resize': 0.0,
+                    'detection': 0.0,
+                    'mqtt_publish': 0.0,
+                    'db_queue_wait': 0.0,
+                    'file_queue_wait': 0.0,
+                    'total': 0.0
+                }
                 
                 # Dynamic frame skipping based on processing performance
                 # Calculate how many frames to skip based on recent processing times
@@ -256,6 +345,8 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 else:
                     max_frames_to_skip = 3  # Normal: skip 3 frames to get latest
                 
+                # Time frame reading
+                frame_read_start = time.time()
                 ret, frame = None, None
                 frames_skipped = 0
                 
@@ -268,12 +359,17 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                     else:
                         break
                 
+                frame_read_time = time.time() - frame_read_start
+                timing_breakdown['frame_read'] = frame_read_time
+                
                 if not ret:
                     frame_read_failures += 1
                     print(f"⚠️  Failed to read frame ({frame_read_failures}/{max_frame_failures})")
                     
                     if frame_read_failures >= max_frame_failures:
                         print("❌ Too many frame read failures. Reconnecting...")
+                        if self.monitoring_collector:
+                            self.monitoring_collector.set_streaming_status(False)
                         break
                     
                     time.sleep(0.5)
@@ -282,6 +378,10 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 # Reset failure counter on successful read
                 frame_read_failures = 0
                 
+                # Update monitoring: frames skipped
+                if frames_skipped > 0 and self.monitoring_collector:
+                    self.monitoring_collector.increment_frames_skipped(frames_skipped)
+                
                 # Generate timestamp BEFORE processing to capture actual detection time
                 # This prevents delay accumulation from slow processing
                 timestamp = time.strftime('%Y-%m-%d_%H-%M-%S-%f')[:-3]
@@ -289,6 +389,10 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
 
                 # Reduce frame resolution from 4K to Full HD
                 frame = self._resize_frame_to_fullhd(frame)
+                
+                # Update frame in monitoring (every 5th frame to reduce overhead)
+                if self.monitoring_collector and self._total_frames_processed % 5 == 0:
+                    self.monitoring_collector.update_frame(frame, time.time())
 
                 # Save frame to database every hour (non-blocking, in background)
                 self._save_frame_to_database_if_needed(frame)
@@ -297,6 +401,7 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 detection_start = time.time()
                 detections, results = self.detector.detect_objects(frame)
                 detection_time = time.time() - detection_start
+                timing_breakdown['detection'] = detection_time
 
                 # Debug: Print all detections before filtering
                 if detections:
@@ -308,7 +413,7 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 # Process detections (pass timestamp from before detection)
                 # MQTT is sent immediately, DB and file save happen in background
                 if detections:
-                    self._process_detections(frame, detections, results, timestamp, timestamp_readable)
+                    self._process_detections(frame, detections, results, timestamp, timestamp_readable, detection_time)
                 
                 # Explicitly free YOLO results to prevent memory leaks
                 del results
@@ -316,6 +421,23 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 
                 # Track processing time for dynamic frame skipping
                 total_processing_time = time.time() - frame_start_time
+                timing_breakdown['total'] = total_processing_time
+                
+                # Increment frame counter
+                self._total_frames_processed += 1
+                
+                # Update monitoring with all timing information
+                if self.monitoring_collector:
+                    self.monitoring_collector.update_timing_breakdown(timing_breakdown)
+                    self.monitoring_collector.update_processing_time(total_processing_time)
+                    # Update queue status
+                    self.monitoring_collector.update_queue_status(
+                        self.db_queue.qsize(),
+                        0.0,  # Will be updated by workers
+                        self.file_queue.qsize(),
+                        0.0   # Will be updated by workers
+                    )
+                
                 self.processing_times.append(total_processing_time)
                 if len(self.processing_times) > self.max_processing_times:
                     self.processing_times.pop(0)  # Keep only last N times
@@ -328,6 +450,8 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 # Container can be stopped with: docker stop katzenschreck
 
             cap.release()
+            if self.monitoring_collector:
+                self.monitoring_collector.set_streaming_status(False)
             print("🔄 Stream disconnected. Attempting to reconnect...")
 
         print(f'Frames with detected objects are saved in folder '

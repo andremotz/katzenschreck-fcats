@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Katzenschreck Echtzeit-Monitoring</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🐱 Katzenschreck Echtzeit-Monitoring</h1>
+            <div class="status-indicator">
+                <span id="connection-status" class="status-badge disconnected">Verbindung...</span>
+                <span id="stream-status" class="status-badge">Stream: Inaktiv</span>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <!-- Live Frame Section -->
+            <section class="card live-frame-section">
+                <h2>Live Frame</h2>
+                <div class="frame-container">
+                    <img id="live-frame" src="/api/frame" alt="Live Frame" />
+                    <div class="frame-overlay">
+                        <span id="frame-timestamp">--</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Performance Metrics Section -->
+            <section class="card metrics-section">
+                <h2>Performance-Metriken</h2>
+                <div class="metrics-grid">
+                    <div class="metric-item">
+                        <label>FPS (Durchschnitt)</label>
+                        <value id="avg-fps">0.00</value>
+                    </div>
+                    <div class="metric-item">
+                        <label>FPS (Aktuell)</label>
+                        <value id="current-fps">0.00</value>
+                    </div>
+                    <div class="metric-item">
+                        <label>Verarbeitungszeit (Ø)</label>
+                        <value id="avg-processing">0.00s</value>
+                    </div>
+                    <div class="metric-item">
+                        <label>Verarbeitungszeit (Min)</label>
+                        <value id="min-processing">0.00s</value>
+                    </div>
+                    <div class="metric-item">
+                        <label>Verarbeitungszeit (Max)</label>
+                        <value id="max-processing">0.00s</value>
+                    </div>
+                    <div class="metric-item">
+                        <label>Frames verarbeitet</label>
+                        <value id="total-frames">0</value>
+                    </div>
+                    <div class="metric-item">
+                        <label>Frames übersprungen</label>
+                        <value id="frames-skipped">0</value>
+                    </div>
+                    <div class="metric-item">
+                        <label>Uptime</label>
+                        <value id="uptime">0s</value>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Timing Breakdown Section -->
+            <section class="card timing-section">
+                <h2>Timing-Aufschlüsselung</h2>
+                <div class="timing-waterfall" id="timing-waterfall">
+                    <!-- Will be populated by JavaScript -->
+                </div>
+            </section>
+
+            <!-- Queue Status Section -->
+            <section class="card queues-section">
+                <h2>Queue-Status</h2>
+                <div class="queues-grid">
+                    <div class="queue-item">
+                        <h3>Database Queue</h3>
+                        <div class="queue-metrics">
+                            <div>
+                                <label>Größe:</label>
+                                <value id="db-queue-size">0</value>
+                            </div>
+                            <div>
+                                <label>Wartezeit:</label>
+                                <value id="db-queue-wait">0.00s</value>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="queue-item">
+                        <h3>File Queue</h3>
+                        <div class="queue-metrics">
+                            <div>
+                                <label>Größe:</label>
+                                <value id="file-queue-size">0</value>
+                            </div>
+                            <div>
+                                <label>Wartezeit:</label>
+                                <value id="file-queue-wait">0.00s</value>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Detections Section -->
+            <section class="card detections-section">
+                <h2>Letzte Detections</h2>
+                <div id="detections-list" class="detections-list">
+                    <p class="no-data">Keine Detections verfügbar</p>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
+

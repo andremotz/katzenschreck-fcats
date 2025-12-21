@@ -40,3 +40,6 @@ urllib3==2.2.3
 zipp==3.20.2
 paho-mqtt==2.1.0
 mysql-connector-python==8.2.0
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+websockets>=12.0
