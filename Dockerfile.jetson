@@ -17,8 +17,17 @@ RUN apt-get update && apt-get install -y \
     libswresample3 \
     && rm -rf /var/lib/apt/lists/*
 
+# Build argument for Git branch/tag (default: main)
+ARG GIT_BRANCH=main
+ARG GIT_REPO=https://github.com/andremotz/katzenschreck-fcats.git
+
+# Clone the repository with the specified branch
+RUN git clone --depth 1 --branch ${GIT_BRANCH} ${GIT_REPO} /tmp/katzenschreck || \
+    (git clone --depth 1 ${GIT_REPO} /tmp/katzenschreck && \
+     cd /tmp/katzenschreck && git checkout ${GIT_BRANCH})
+
 # Copy requirements file
-COPY cat_detector/requirements_jetson.txt /katzenschreck/requirements_jetson.txt
+RUN cp /tmp/katzenschreck/cat_detector/requirements_jetson.txt /katzenschreck/requirements_jetson.txt
 
 # Install Python dependencies
 # Note: PyTorch, ultralytics, and opencv are already included in the base image
@@ -26,17 +35,26 @@ COPY cat_detector/requirements_jetson.txt /katzenschreck/requirements_jetson.txt
 RUN pip install --upgrade setuptools wheel
 
 # Install only additional packages needed (without strict version pins)
+# Also install monitoring dependencies
 RUN pip install --no-cache-dir \
     paho-mqtt \
     mysql-connector-python \
-    psutil
+    psutil \
+    fastapi \
+    uvicorn[standard] \
+    websockets
 
 # Copy application code
-COPY cat_detector/ /katzenschreck/cat_detector/
-COPY config.txt /katzenschreck/config.txt
+RUN cp -r /tmp/katzenschreck/cat_detector/ /katzenschreck/cat_detector/
 
-# Copy trained models directory
-COPY runs/ /katzenschreck/runs/
+# Copy config file (will be overridden by volume mount, but needed for build)
+RUN cp /tmp/katzenschreck/config.txt /katzenschreck/config.txt || echo "# Config will be mounted" > /katzenschreck/config.txt
+
+# Copy trained models directory (if exists)
+RUN cp -r /tmp/katzenschreck/runs/ /katzenschreck/runs/ 2>/dev/null || mkdir -p /katzenschreck/runs/
+
+# Clean up cloned repository to save space
+RUN rm -rf /tmp/katzenschreck
 
 # Create results directory
 RUN mkdir -p /katzenschreck/results

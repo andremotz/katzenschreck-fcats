@@ -2,8 +2,12 @@
 
 
 # Build the Docker image
-echo "🔨 Building Jetson Docker image..."
-docker build -f Dockerfile.jetson -t katzenschreck-jetson .
+# Set GIT_BRANCH environment variable to use a specific branch (default: main)
+GIT_BRANCH=${GIT_BRANCH:-dev/realtime-monitoring}
+echo "🔨 Building Jetson Docker image from branch: ${GIT_BRANCH}..."
+docker build -f Dockerfile.jetson \
+    --build-arg GIT_BRANCH=${GIT_BRANCH} \
+    -t katzenschreck-jetson .
 
 # Stop and remove existing container if it exists
 echo "🛑 Stopping existing container..."
