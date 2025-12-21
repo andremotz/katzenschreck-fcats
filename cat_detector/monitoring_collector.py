@@ -48,7 +48,8 @@ class MonitoringCollector:
             'db_queue_wait': 0.0,
             'file_queue_wait': 0.0,
             'total': 0.0,
-            'frame_age': 0.0  # Age of frame when processed (time between capture and processing)
+            'frame_age': 0.0,  # Age of frame when processed (time between capture and processing)
+            'reconnection_time': 0.0  # Time taken to reconnect (reconnect_per_frame mode only)
         }
         
         # System status

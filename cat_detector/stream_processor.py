@@ -282,19 +282,22 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 print(f"⚠️  Error queueing database save: {e}")
 
     def run(self):
-        """Main loop for stream processing using threaded RTSP reader"""
+        """Main loop for stream processing using RTSP reader (continuous or reconnect_per_frame mode)"""
         print(f"🎥 Initializing RTSP stream reader: {self.config.rtsp_stream_url}")
         print(f"   Transport: {self.config.rtsp_transport}, Low delay: {self.config.rtsp_low_delay}")
+        print(f"   Connection mode: {self.config.rtsp_connection_mode}")
         
-        # Initialize RTSP stream reader
+        # Initialize RTSP stream reader with configured mode
         self.stream_reader = RTSPStreamReader(
             self.config.rtsp_stream_url,
             transport=self.config.rtsp_transport,
-            low_delay=self.config.rtsp_low_delay
+            low_delay=self.config.rtsp_low_delay,
+            mode=self.config.rtsp_connection_mode
         )
         
-        # Wait a bit for the reader to connect
-        time.sleep(2)
+        # Wait a bit for the reader to connect (only in continuous mode)
+        if self.config.rtsp_connection_mode == 'continuous':
+            time.sleep(2)
         
         # Update monitoring: streaming started
         if self.monitoring_collector:
@@ -315,12 +318,22 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 'db_queue_wait': 0.0,
                 'file_queue_wait': 0.0,
                 'total': 0.0,
-                'frame_age': 0.0
+                'frame_age': 0.0,
+                'reconnection_time': 0.0  # For reconnect_per_frame mode
             }
             
-            # Get latest frame from reader (thread-safe, always returns newest)
+            # Get frame based on connection mode
             frame_read_start = time.time()
-            frame_result = self.stream_reader.get_latest_frame()
+            if self.config.rtsp_connection_mode == 'reconnect_per_frame':
+                # Reconnect and get fresh frame
+                frame_result = self.stream_reader.get_fresh_frame()
+                # Reconnection time is included in frame_read_time
+                stats = self.stream_reader.get_statistics()
+                timing_breakdown['reconnection_time'] = stats.get('last_reconnection_time', 0.0)
+            else:
+                # Get latest frame from continuous reader
+                frame_result = self.stream_reader.get_latest_frame()
+            
             frame_read_time = time.time() - frame_read_start
             timing_breakdown['frame_read'] = frame_read_time
             
@@ -328,8 +341,11 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
             if frame_result is None:
                 consecutive_no_frame_count += 1
                 if consecutive_no_frame_count >= max_consecutive_no_frame:
-                    if not self.stream_reader.is_connected():
-                        print("⚠️  RTSP Reader not connected, waiting for reconnection...")
+                    if self.config.rtsp_connection_mode == 'continuous':
+                        if not self.stream_reader.is_connected():
+                            print("⚠️  RTSP Reader not connected, waiting for reconnection...")
+                    else:
+                        print("⚠️  Failed to get fresh frame, retrying...")
                     consecutive_no_frame_count = 0  # Reset counter
                 time.sleep(0.1)  # Short sleep to avoid busy waiting
                 continue
@@ -346,20 +362,23 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
             consecutive_no_frame_count = 0
             
             # Calculate frame age (time between capture and now)
+            # In reconnect_per_frame mode, frame_age should be ~0 (fresh frame)
             frame_age = time.time() - frame_timestamp
             timing_breakdown['frame_age'] = frame_age
             
-            # Warn if frame is too old (indicates drift)
+            # Warn if frame is too old (indicates drift) - should not happen in reconnect_per_frame mode
             if frame_age > 2.0:
-                print(f"⚠️  Old frame detected: {frame_age:.2f}s old (Frame #{frame_number})")
+                print(f"⚠️  Old frame detected: {frame_age:.2f}s old (Frame #{frame_number}, Mode: {self.config.rtsp_connection_mode})")
             
-            # Update monitoring with frame age
+            # Update monitoring with frame age and reconnection time
             if self.monitoring_collector:
                 self.monitoring_collector.update_frame_age(frame_age)
                 # Update statistics from reader
                 stats = self.stream_reader.get_statistics()
-                if stats.get('frames_dropped', 0) > 0:
-                    self.monitoring_collector.increment_frames_skipped(stats['frames_dropped'])
+                if self.config.rtsp_connection_mode == 'continuous':
+                    if stats.get('frames_dropped', 0) > 0:
+                        self.monitoring_collector.increment_frames_skipped(stats['frames_dropped'])
+                # Reconnection time is already in timing_breakdown
             
             # Generate timestamp BEFORE processing to capture actual detection time
             timestamp = time.strftime('%Y-%m-%d_%H-%M-%S-%f')[:-3]

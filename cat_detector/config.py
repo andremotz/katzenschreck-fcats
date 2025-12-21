@@ -26,6 +26,10 @@ class Config:  # pylint: disable=too-few-public-methods,too-many-instance-attrib
             self.rtsp_transport = 'udp'  # Default to UDP
         # RTSP low delay mode (default: true)
         self.rtsp_low_delay = config.get('rtsp_low_delay', 'true').lower() == 'true'
+        # RTSP connection mode (continuous or reconnect_per_frame, default: continuous)
+        self.rtsp_connection_mode = config.get('rtsp_connection_mode', 'continuous').lower()
+        if self.rtsp_connection_mode not in ['continuous', 'reconnect_per_frame']:
+            self.rtsp_connection_mode = 'continuous'  # Default to continuous
         self.mqtt_broker_url = config.get('mqtt_broker_url')
         self.mqtt_broker_port = int(config.get('mqtt_broker_port', 1883))
         self.mqtt_topic = config.get('mqtt_topic')
