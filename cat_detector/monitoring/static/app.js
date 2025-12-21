@@ -95,6 +95,16 @@ function updateMetrics(metrics) {
     document.getElementById('total-frames').textContent = metrics.total_frames_processed;
     document.getElementById('frames-skipped').textContent = metrics.frames_skipped;
     document.getElementById('uptime').textContent = formatUptime(metrics.uptime);
+    
+    // Highlight slow processing times
+    const maxProcessingEl = document.getElementById('max-processing').parentElement;
+    if (metrics.max_processing_time > 10.0) {
+        maxProcessingEl.style.borderLeftColor = '#f44336'; // Red for very slow
+    } else if (metrics.max_processing_time > 5.0) {
+        maxProcessingEl.style.borderLeftColor = '#ff9800'; // Orange for slow
+    } else {
+        maxProcessingEl.style.borderLeftColor = '#4a9eff'; // Blue (normal)
+    }
 }
 
 // Update timing breakdown
@@ -102,28 +112,52 @@ function updateTiming(timing) {
     const container = document.getElementById('timing-waterfall');
     container.innerHTML = '';
     
-    // Find max time for scaling
+    // Find max time for scaling (include all timing components)
     const maxTime = Math.max(
         timing.frame_read || 0,
+        timing.reconnection_time || 0,
         timing.resize || 0,
         timing.detection || 0,
+        timing.detection_processing || 0,
         timing.mqtt_publish || 0,
         timing.db_queue_wait || 0,
         timing.file_queue_wait || 0,
+        timing.timestamp_generation || 0,
+        timing.monitoring_update || 0,
+        timing.save_database_check || 0,
+        timing.memory_cleanup || 0,
+        timing.unaccounted_time || 0,
         timing.total || 0
     );
     
     const timingItems = [
         { label: 'Frame Read', value: timing.frame_read || 0 },
+        { label: 'Reconnection', value: timing.reconnection_time || 0, optional: true },
         { label: 'Resize', value: timing.resize || 0 },
         { label: 'Detection', value: timing.detection || 0 },
+        { label: 'Detection Process', value: timing.detection_processing || 0 },
         { label: 'MQTT Publish', value: timing.mqtt_publish || 0 },
+        { label: 'DB Check', value: timing.save_database_check || 0 },
+        { label: 'Monitoring Update', value: timing.monitoring_update || 0 },
+        { label: 'Timestamp Gen', value: timing.timestamp_generation || 0 },
+        { label: 'Memory Cleanup', value: timing.memory_cleanup || 0 },
         { label: 'DB Queue Wait', value: timing.db_queue_wait || 0 },
         { label: 'File Queue Wait', value: timing.file_queue_wait || 0 },
+        { label: 'Unaccounted Time', value: timing.unaccounted_time || 0, warning: timing.unaccounted_time > 0.5 },
         { label: 'Total', value: timing.total || 0, highlight: true }
     ];
     
-    timingItems.forEach(item => {
+    // Filter out optional items with zero value
+    // Add frame age if available
+    if (timing.frame_age !== undefined && timing.frame_age > 0) {
+        visibleItems.push({ 
+            label: 'Frame Age', 
+            value: timing.frame_age,
+            info: 'Time between frame capture and processing'
+        });
+    }
+    
+    visibleItems.forEach(item => {
         const bar = document.createElement('div');
         bar.className = 'timing-bar';
         
@@ -142,6 +176,8 @@ function updateTiming(timing) {
         
         if (item.highlight) {
             fill.style.background = 'linear-gradient(90deg, #4caf50, #45a049)';
+        } else if (item.warning) {
+            fill.style.background = 'linear-gradient(90deg, #ff9800, #f57c00)';
         }
         
         visual.appendChild(fill);

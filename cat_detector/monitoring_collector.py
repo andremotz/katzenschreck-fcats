@@ -49,7 +49,13 @@ class MonitoringCollector:
             'file_queue_wait': 0.0,
             'total': 0.0,
             'frame_age': 0.0,  # Age of frame when processed (time between capture and processing)
-            'reconnection_time': 0.0  # Time taken to reconnect (reconnect_per_frame mode only)
+            'reconnection_time': 0.0,  # Time taken to reconnect (reconnect_per_frame mode only)
+            'timestamp_generation': 0.0,  # Time for timestamp string generation
+            'monitoring_update': 0.0,  # Time for monitoring frame update (JPEG encoding)
+            'save_database_check': 0.0,  # Time for hourly database save check
+            'detection_processing': 0.0,  # Time for processing detections (filtering, annotation)
+            'memory_cleanup': 0.0,  # Time for memory cleanup operations
+            'unaccounted_time': 0.0  # Time not accounted for in other measurements
         }
         
         # System status
@@ -59,6 +65,9 @@ class MonitoringCollector:
         self._total_frames_processed = 0
         self._frame_age = 0.0  # Current frame age in seconds
         self._frame_age_history = deque(maxlen=max_history)  # History of frame ages
+        
+        # Historical timing data for profiling
+        self._timing_history = deque(maxlen=max_history)  # History of timing breakdowns
 
     def update_frame(self, frame, timestamp: Optional[float] = None):
         """Update the current frame (JPEG encoded for web display)
@@ -109,13 +118,40 @@ class MonitoringCollector:
                 - file_queue_wait: Time waiting in file queue
                 - total: Total processing time
                 - frame_age: Age of frame when processed (optional)
+                - reconnection_time: Time for reconnection (optional)
+                - timestamp_generation: Time for timestamp generation (optional)
+                - monitoring_update: Time for monitoring update (optional)
+                - save_database_check: Time for database save check (optional)
+                - detection_processing: Time for detection processing (optional)
+                - memory_cleanup: Time for memory cleanup (optional)
+                - unaccounted_time: Unaccounted time (optional)
         """
         with self._lock:
+            # Calculate unaccounted time if not provided
+            if 'unaccounted_time' not in timing and 'total' in timing:
+                accounted_time = sum([
+                    timing.get('frame_read', 0.0),
+                    timing.get('resize', 0.0),
+                    timing.get('detection', 0.0),
+                    timing.get('mqtt_publish', 0.0),
+                    timing.get('db_queue_wait', 0.0),
+                    timing.get('file_queue_wait', 0.0),
+                    timing.get('timestamp_generation', 0.0),
+                    timing.get('monitoring_update', 0.0),
+                    timing.get('save_database_check', 0.0),
+                    timing.get('detection_processing', 0.0),
+                    timing.get('memory_cleanup', 0.0)
+                ])
+                timing['unaccounted_time'] = max(0.0, timing['total'] - accounted_time)
+            
             self._timing_breakdown.update(timing)
             # Track frame age if provided
             if 'frame_age' in timing:
                 self._frame_age = timing['frame_age']
                 self._frame_age_history.append(timing['frame_age'])
+            
+            # Store timing history for profiling
+            self._timing_history.append(timing.copy())
 
     def update_frame_age(self, frame_age: float):
         """Update the current frame age
@@ -273,6 +309,18 @@ class MonitoringCollector:
         """
         with self._lock:
             return self._timing_breakdown.copy()
+
+    def get_timing_history(self, limit: int = 10) -> List[Dict[str, float]]:
+        """Get historical timing breakdowns for profiling (thread-safe)
+        
+        Args:
+            limit: Maximum number of historical entries to return
+            
+        Returns:
+            List of timing breakdown dictionaries
+        """
+        with self._lock:
+            return list(self._timing_history)[-limit:]
 
     def get_status(self) -> Dict[str, Any]:
         """Get overall system status (thread-safe)

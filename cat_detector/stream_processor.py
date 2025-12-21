@@ -228,7 +228,11 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
             timestamp: Timestamp string (generated BEFORE detection to avoid delay)
             timestamp_readable: Human-readable timestamp
             detection_time: Time taken for detection in seconds
+            
+        Returns:
+            Total MQTT publish time (sum of all MQTT publishes)
         """
+        total_mqtt_time = 0.0
         for class_id, confidence, bbox in detections:
             class_name = self.detector.CLASS_NAMES.get(class_id, "Unknown")
             if confidence > self.config.confidence_threshold:
@@ -257,16 +261,14 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
             mqtt_start = time.time()
             self.mqtt_handler.publish_detection(class_name, confidence, timestamp)
             mqtt_time = time.time() - mqtt_start
+            total_mqtt_time += mqtt_time
             print(f'[{timestamp_readable}] 🚨 Detected: {class_name} (ID: {class_id}, Confidence: {confidence:.4f}) - MQTT sent')
             
-            # Update monitoring with detection and MQTT timing
+            # Update monitoring with detection
             if self.monitoring_collector:
                 self.monitoring_collector.add_detection(
                     class_name, confidence, bbox, timestamp, detection_time
                 )
-                timing = self.monitoring_collector.get_timing_breakdown()
-                timing['mqtt_publish'] = mqtt_time
-                self.monitoring_collector.update_timing_breakdown(timing)
 
             # PRIORITY 2: Queue frame for background file saving (non-blocking)
             self._save_detection(annotated_frame, timestamp)
@@ -280,6 +282,8 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 print("⚠️  Database queue full, skipping DB save (non-critical)")
             except Exception as e:
                 print(f"⚠️  Error queueing database save: {e}")
+        
+        return total_mqtt_time
 
     def run(self):
         """Main loop for stream processing using RTSP reader (continuous or reconnect_per_frame mode)"""
@@ -381,8 +385,10 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 # Reconnection time is already in timing_breakdown
             
             # Generate timestamp BEFORE processing to capture actual detection time
+            timestamp_start = time.time()
             timestamp = time.strftime('%Y-%m-%d_%H-%M-%S-%f')[:-3]
             timestamp_readable = time.strftime('%Y-%m-%d %H:%M:%S')
+            timing_breakdown['timestamp_generation'] = time.time() - timestamp_start
 
             # Reduce frame resolution from 4K to Full HD
             resize_start = time.time()
@@ -391,11 +397,15 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
             timing_breakdown['resize'] = resize_time
             
             # Update frame in monitoring (every 5th frame to reduce overhead)
+            monitoring_update_start = time.time()
             if self.monitoring_collector and self._total_frames_processed % 5 == 0:
                 self.monitoring_collector.update_frame(frame, frame_timestamp)
+            timing_breakdown['monitoring_update'] = time.time() - monitoring_update_start
 
             # Save frame to database every hour (non-blocking, in background)
+            db_check_start = time.time()
             self._save_frame_to_database_if_needed(frame)
+            timing_breakdown['save_database_check'] = time.time() - db_check_start
 
             # Object detection (this is the main blocking operation)
             detection_start = time.time()
@@ -414,12 +424,18 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
 
             # Process detections (pass timestamp from before detection)
             # MQTT is sent immediately, DB and file save happen in background
+            detection_processing_start = time.time()
+            mqtt_total_time = 0.0
             if detections:
-                self._process_detections(frame, detections, results, timestamp, timestamp_readable, detection_time)
+                mqtt_total_time = self._process_detections(frame, detections, results, timestamp, timestamp_readable, detection_time)
+            timing_breakdown['detection_processing'] = time.time() - detection_processing_start
+            timing_breakdown['mqtt_publish'] = mqtt_total_time
             
             # Explicitly free YOLO results to prevent memory leaks
+            memory_cleanup_start = time.time()
             del results
             del detections
+            timing_breakdown['memory_cleanup'] = time.time() - memory_cleanup_start
             
             # Track processing time
             total_processing_time = time.time() - frame_start_time
@@ -427,6 +443,24 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
             
             # Increment frame counter
             self._total_frames_processed += 1
+            
+            # Calculate unaccounted time (time not tracked in other measurements)
+            # This helps identify hidden bottlenecks
+            accounted_time = sum([
+                timing_breakdown.get('frame_read', 0.0),
+                timing_breakdown.get('reconnection_time', 0.0),
+                timing_breakdown.get('resize', 0.0),
+                timing_breakdown.get('detection', 0.0),
+                timing_breakdown.get('detection_processing', 0.0),
+                timing_breakdown.get('mqtt_publish', 0.0),
+                timing_breakdown.get('save_database_check', 0.0),
+                timing_breakdown.get('monitoring_update', 0.0),
+                timing_breakdown.get('timestamp_generation', 0.0),
+                timing_breakdown.get('memory_cleanup', 0.0),
+                timing_breakdown.get('db_queue_wait', 0.0),
+                timing_breakdown.get('file_queue_wait', 0.0)
+            ])
+            timing_breakdown['unaccounted_time'] = max(0.0, total_processing_time - accounted_time)
             
             # Update monitoring with all timing information
             if self.monitoring_collector:
@@ -444,8 +478,26 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
             if len(self.processing_times) > self.max_processing_times:
                 self.processing_times.pop(0)  # Keep only last N times
             
+            # Detailed logging for slow frames (>5 seconds)
+            if total_processing_time > 5.0:
+                print(f"\n🐌 SLOW FRAME DETECTED: {total_processing_time:.2f}s (Frame #{frame_number})")
+                print(f"   Detailed Breakdown:")
+                print(f"   - Frame Read:        {timing_breakdown.get('frame_read', 0.0):.3f}s")
+                print(f"   - Reconnection:      {timing_breakdown.get('reconnection_time', 0.0):.3f}s")
+                print(f"   - Resize:            {timing_breakdown.get('resize', 0.0):.3f}s")
+                print(f"   - Detection:         {timing_breakdown.get('detection', 0.0):.3f}s")
+                print(f"   - Detection Process: {timing_breakdown.get('detection_processing', 0.0):.3f}s")
+                print(f"   - MQTT Publish:      {timing_breakdown.get('mqtt_publish', 0.0):.3f}s")
+                print(f"   - DB Check:          {timing_breakdown.get('save_database_check', 0.0):.3f}s")
+                print(f"   - Monitoring Update: {timing_breakdown.get('monitoring_update', 0.0):.3f}s")
+                print(f"   - Memory Cleanup:     {timing_breakdown.get('memory_cleanup', 0.0):.3f}s")
+                print(f"   - Timestamp Gen:     {timing_breakdown.get('timestamp_generation', 0.0):.3f}s")
+                print(f"   - Unaccounted Time:  {timing_breakdown.get('unaccounted_time', 0.0):.3f}s")
+                print(f"   - Frame Age:         {frame_age:.3f}s")
+                print()
+            
             # Warn if processing is getting slow
-            if total_processing_time > 2.0:
+            elif total_processing_time > 2.0:
                 print(f"⚠️  Slow frame processing: {total_processing_time:.2f}s "
                       f"(target: <{self.max_processing_time:.2f}s, frame age: {frame_age:.3f}s)")
             

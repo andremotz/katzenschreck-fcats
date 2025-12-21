@@ -64,6 +64,11 @@ class MonitoringServer:
             """Get timing breakdown"""
             return self.collector.get_timing_breakdown()
 
+        @self.app.get("/api/timing/history")
+        async def get_timing_history(limit: int = 10):
+            """Get historical timing breakdowns for profiling"""
+            return self.collector.get_timing_history(limit=limit)
+
         @self.app.get("/api/frame")
         async def get_frame():
             """Get current frame as JPEG"""
