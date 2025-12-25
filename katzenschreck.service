@@ -7,7 +7,7 @@ Wants=network.target
 [Service]
 Type=simple
 WorkingDirectory=PROJECT_DIR_PLACEHOLDER
-ExecStart=PROJECT_DIR_PLACEHOLDER/start_script.sh --run-only
+ExecStart=PROJECT_DIR_PLACEHOLDER/start_script.sh
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
 RestartSec=10
