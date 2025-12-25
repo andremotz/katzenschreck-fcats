@@ -44,8 +44,11 @@ else
     # Verwende einen Namen ohne Punkt am Anfang, damit .dockerignore es nicht ignoriert
     CUDA_TMP_DIR="./docker_cuda_temp"
     
-    # Lösche altes Verzeichnis falls vorhanden
-    rm -rf "$CUDA_TMP_DIR"
+    # Lösche altes Verzeichnis falls vorhanden (kann root-Berechtigungen haben)
+    if [ -d "$CUDA_TMP_DIR" ]; then
+        echo "🧹 Cleaning up old CUDA temp directory..."
+        sudo rm -rf "$CUDA_TMP_DIR" 2>/dev/null || rm -rf "$CUDA_TMP_DIR" 2>/dev/null || true
+    fi
     mkdir -p "$CUDA_TMP_DIR"
     
     # Kopiere nur notwendige CUDA-Bibliotheken (bin, lib64, include)
