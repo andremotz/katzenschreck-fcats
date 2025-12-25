@@ -20,19 +20,7 @@ FROM nvcr.io/nvidia/l4t-base:r36.2.0 AS base
 # Auf Jetson ist CUDA Teil von JetPack und sollte unter /usr/local/cuda-11.4 verfügbar sein
 # WICHTIG: Beim Build muss CUDA vom Host-System gemountet werden:
 #   docker build --mount type=bind,source=/usr/local/cuda-11.4,target=/usr/local/cuda-11.4,readonly ...
-# Wir prüfen, ob CUDA verfügbar ist
-RUN CUDA_PATHS="/usr/local/cuda-11.4 /usr/local/cuda /usr/local/cuda-12.0" && \
-    for path in $CUDA_PATHS; do \
-        if [ -f "$path/bin/nvcc" ]; then \
-            echo "Found CUDA at: $path"; \
-            echo "$path" > /tmp/cuda_path.txt; \
-            $path/bin/nvcc --version; \
-            exit 0; \
-        fi; \
-    done && \
-    echo "ERROR: CUDA not found! Please mount CUDA from host system:" && \
-    echo "  docker build --mount type=bind,source=/usr/local/cuda-11.4,target=/usr/local/cuda-11.4,readonly ..." && \
-    exit 1
+# CUDA-Prüfung erfolgt später im PyTorch-Builder-Stage, wenn es wirklich gebraucht wird
 
 # ============================================================================
 # Stage 1: Python 3.11 Builder
