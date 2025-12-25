@@ -47,9 +47,15 @@ else
     # Lösche altes Verzeichnis falls vorhanden (kann root-Berechtigungen haben)
     if [ -d "$CUDA_TMP_DIR" ]; then
         echo "🧹 Cleaning up old CUDA temp directory..."
-        sudo rm -rf "$CUDA_TMP_DIR" 2>/dev/null || rm -rf "$CUDA_TMP_DIR" 2>/dev/null || true
+        # Versuche zuerst ohne sudo, dann mit sudo (falls Passwort gesetzt)
+        rm -rf "$CUDA_TMP_DIR" 2>/dev/null || \
+        (echo "   Trying with sudo..." && sudo rm -rf "$CUDA_TMP_DIR" 2>/dev/null) || \
+        (echo "   ⚠️  Cannot remove old directory, will try to overwrite")
     fi
+    
+    # Erstelle Verzeichnis mit korrekten Berechtigungen
     mkdir -p "$CUDA_TMP_DIR"
+    chmod 755 "$CUDA_TMP_DIR" 2>/dev/null || true
     
     # Kopiere nur notwendige CUDA-Bibliotheken (bin, lib64, include)
     echo "📦 Copying CUDA binaries..."
@@ -91,8 +97,13 @@ else
     echo "✅ CUDA files copied successfully to $CUDA_TMP_DIR"
     ls -lh "$CUDA_TMP_DIR/bin/nvcc"
     
+    # Stelle sicher, dass wir Schreibrechte haben
+    chmod -R u+w "$CUDA_TMP_DIR" 2>/dev/null || sudo chmod -R u+w "$CUDA_TMP_DIR" 2>/dev/null || true
+    
     # Speichere CUDA-Pfad für Dockerfile
-    echo "$CUDA_PATH" > "$CUDA_TMP_DIR/cuda_path.txt"
+    echo "$CUDA_PATH" > "$CUDA_TMP_DIR/cuda_path.txt" 2>/dev/null || \
+        (sudo sh -c "echo '$CUDA_PATH' > '$CUDA_TMP_DIR/cuda_path.txt'" && \
+         sudo chown andremotz:andremotz "$CUDA_TMP_DIR/cuda_path.txt" 2>/dev/null || true)
     
     # Prüfe ob Dateien kopiert wurden
     if [ ! -d "$CUDA_TMP_DIR/bin" ] || [ ! -f "$CUDA_TMP_DIR/bin/nvcc" ]; then
