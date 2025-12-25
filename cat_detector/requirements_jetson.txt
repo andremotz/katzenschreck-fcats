@@ -2,6 +2,10 @@
 # Note: Most dependencies (torch, ultralytics, numpy, etc.) are already included in the base image
 # Only install additional packages needed for our application
 
+# NumPy (must be < 2.0 for OpenCV compatibility)
+# Required for native installation (not needed in Docker as it's in base image)
+numpy<2.0
+
 # OpenCV (ensure compatibility with ultralytics)
 opencv-python==4.8.1.78
 
