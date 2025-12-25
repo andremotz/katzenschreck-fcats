@@ -16,6 +16,7 @@ StandardError=journal
 SyslogIdentifier=katzenschreck
 
 # Environment variables
+Environment=SYSTEMD_SERVICE=1
 Environment=PYTHONPATH=PROJECT_DIR_PLACEHOLDER
 Environment=PYTHONUNBUFFERED=1
 
