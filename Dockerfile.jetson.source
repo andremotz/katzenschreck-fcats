@@ -87,42 +87,35 @@ RUN apt-get remove -y cmake 2>/dev/null || true && \
 ARG CUDA_SOURCE_PATH=""
 
 # Kopiere CUDA-Bibliotheken aus Build-Context (falls buildx nicht verfügbar)
-RUN echo "CUDA_SOURCE_PATH: $CUDA_SOURCE_PATH" && \
-    echo "Current directory: $(pwd)" && \
-    echo "Listing build context root:" && \
-    ls -la / | head -20 && \
-    echo "Listing current directory:" && \
-    ls -la . | head -20 && \
-    if [ -n "$CUDA_SOURCE_PATH" ] && [ -d "$CUDA_SOURCE_PATH" ]; then \
-        echo "✅ Directory found: $CUDA_SOURCE_PATH"; \
-        echo "Copying CUDA from build context: $CUDA_SOURCE_PATH"; \
-        ls -la "$CUDA_SOURCE_PATH" || echo "Cannot list CUDA_SOURCE_PATH"; \
+# COPY kann nicht mit Variablen verwendet werden, daher kopieren wir das gesamte Verzeichnis
+# wenn es im Build-Context existiert
+COPY docker_cuda_temp /tmp/cuda_temp 2>/dev/null || \
+    (echo "docker_cuda_temp not found in build context, will try standard CUDA locations" && mkdir -p /tmp/cuda_temp)
+
+# Verschiebe kopierte CUDA-Dateien an den Zielort
+RUN if [ -d "/tmp/cuda_temp/bin" ] && [ -f "/tmp/cuda_temp/bin/nvcc" ]; then \
+        echo "✅ CUDA files found in /tmp/cuda_temp, moving to /usr/local/cuda-11.4"; \
         CUDA_TARGET="/usr/local/cuda-11.4"; \
         mkdir -p "$CUDA_TARGET"; \
-        if [ -d "$CUDA_SOURCE_PATH/bin" ]; then \
-            cp -r "$CUDA_SOURCE_PATH/bin" "$CUDA_TARGET/" && \
+        if [ -d "/tmp/cuda_temp/bin" ]; then \
+            cp -r /tmp/cuda_temp/bin "$CUDA_TARGET/" && \
             echo "Copied bin directory"; \
-        else \
-            echo "WARNING: $CUDA_SOURCE_PATH/bin not found"; \
         fi; \
-        if [ -d "$CUDA_SOURCE_PATH/lib64" ]; then \
-            cp -r "$CUDA_SOURCE_PATH/lib64" "$CUDA_TARGET/" && \
+        if [ -d "/tmp/cuda_temp/lib64" ]; then \
+            cp -r /tmp/cuda_temp/lib64 "$CUDA_TARGET/" && \
             echo "Copied lib64 directory"; \
-        else \
-            echo "WARNING: $CUDA_SOURCE_PATH/lib64 not found"; \
         fi; \
-        if [ -d "$CUDA_SOURCE_PATH/include" ]; then \
-            cp -r "$CUDA_SOURCE_PATH/include" "$CUDA_TARGET/" && \
+        if [ -d "/tmp/cuda_temp/include" ]; then \
+            cp -r /tmp/cuda_temp/include "$CUDA_TARGET/" && \
             echo "Copied include directory"; \
-        else \
-            echo "WARNING: $CUDA_SOURCE_PATH/include not found"; \
         fi; \
         echo "$CUDA_TARGET" > /tmp/cuda_path.txt; \
         echo "CUDA copied to: $CUDA_TARGET"; \
         ls -la "$CUDA_TARGET/bin/nvcc" 2>/dev/null && echo "✅ nvcc found after copy" || echo "❌ WARNING: nvcc not found after copy"; \
+        rm -rf /tmp/cuda_temp; \
     else \
-        echo "CUDA_SOURCE_PATH not set or directory not found: '$CUDA_SOURCE_PATH'"; \
-        echo "Will try to find CUDA at standard locations..."; \
+        echo "CUDA files not found in /tmp/cuda_temp, will try to find CUDA at standard locations..."; \
+        ls -la /tmp/cuda_temp 2>/dev/null || echo "  /tmp/cuda_temp does not exist"; \
     fi
 
 # Finde CUDA Installation (entweder gemountet oder kopiert)
