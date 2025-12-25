@@ -18,9 +18,31 @@ else
 fi
 
 # Build the Docker image
+# WICHTIG: CUDA muss vom Host-System gemountet werden
 echo "🔨 Building Docker image..."
-docker build -f Dockerfile.jetson.source \
-    -t katzenschreck:jetson-source .
+echo "📦 Mounting CUDA from host system..."
+
+# Finde CUDA-Pfad auf dem Host-System
+CUDA_PATH=$(find /usr/local -name nvcc 2>/dev/null | head -1 | xargs dirname | xargs dirname)
+if [ -z "$CUDA_PATH" ]; then
+    CUDA_PATH="/usr/local/cuda-11.4"
+fi
+
+if [ ! -f "$CUDA_PATH/bin/nvcc" ]; then
+    echo "⚠️  WARNING: CUDA not found at $CUDA_PATH"
+    echo "   Trying to find CUDA..."
+    CUDA_PATH=$(find /usr/local -name nvcc 2>/dev/null | head -1 | xargs dirname | xargs dirname)
+fi
+
+if [ -f "$CUDA_PATH/bin/nvcc" ]; then
+    echo "✅ Found CUDA at: $CUDA_PATH"
+    docker build --mount type=bind,source=$CUDA_PATH,target=$CUDA_PATH,readonly \
+        -f Dockerfile.jetson.source \
+        -t katzenschreck:jetson-source .
+else
+    echo "❌ ERROR: CUDA not found! Please install CUDA or specify CUDA_PATH"
+    exit 1
+fi
 
 # Stop and remove existing container if it exists
 echo "🛑 Stopping existing container..."
