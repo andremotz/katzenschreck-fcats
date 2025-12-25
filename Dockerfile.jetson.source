@@ -83,16 +83,40 @@ RUN apt-get remove -y cmake 2>/dev/null || true && \
     ./cmake-3.24.0-linux-aarch64.sh --skip-license --prefix=/usr/local && \
     rm cmake-3.24.0-linux-aarch64.sh
 
+# Build-Argument für CUDA-Quelle (muss vor RUN deklariert werden)
+ARG CUDA_SOURCE_PATH=""
+
 # Kopiere CUDA-Bibliotheken aus Build-Context (falls buildx nicht verfügbar)
-RUN if [ -n "$CUDA_SOURCE_PATH" ] && [ -d "$CUDA_SOURCE_PATH" ]; then \
-        echo "Copying CUDA from build context..."; \
+RUN echo "CUDA_SOURCE_PATH: $CUDA_SOURCE_PATH" && \
+    if [ -n "$CUDA_SOURCE_PATH" ] && [ -d "$CUDA_SOURCE_PATH" ]; then \
+        echo "Copying CUDA from build context: $CUDA_SOURCE_PATH"; \
+        ls -la "$CUDA_SOURCE_PATH" || echo "Cannot list CUDA_SOURCE_PATH"; \
         CUDA_TARGET="/usr/local/cuda-11.4"; \
         mkdir -p "$CUDA_TARGET"; \
-        if [ -d "$CUDA_SOURCE_PATH/bin" ]; then cp -r "$CUDA_SOURCE_PATH/bin" "$CUDA_TARGET/"; fi; \
-        if [ -d "$CUDA_SOURCE_PATH/lib64" ]; then cp -r "$CUDA_SOURCE_PATH/lib64" "$CUDA_TARGET/"; fi; \
-        if [ -d "$CUDA_SOURCE_PATH/include" ]; then cp -r "$CUDA_SOURCE_PATH/include" "$CUDA_TARGET/"; fi; \
+        if [ -d "$CUDA_SOURCE_PATH/bin" ]; then \
+            cp -r "$CUDA_SOURCE_PATH/bin" "$CUDA_TARGET/" && \
+            echo "Copied bin directory"; \
+        else \
+            echo "WARNING: $CUDA_SOURCE_PATH/bin not found"; \
+        fi; \
+        if [ -d "$CUDA_SOURCE_PATH/lib64" ]; then \
+            cp -r "$CUDA_SOURCE_PATH/lib64" "$CUDA_TARGET/" && \
+            echo "Copied lib64 directory"; \
+        else \
+            echo "WARNING: $CUDA_SOURCE_PATH/lib64 not found"; \
+        fi; \
+        if [ -d "$CUDA_SOURCE_PATH/include" ]; then \
+            cp -r "$CUDA_SOURCE_PATH/include" "$CUDA_TARGET/" && \
+            echo "Copied include directory"; \
+        else \
+            echo "WARNING: $CUDA_SOURCE_PATH/include not found"; \
+        fi; \
         echo "$CUDA_TARGET" > /tmp/cuda_path.txt; \
         echo "CUDA copied to: $CUDA_TARGET"; \
+        ls -la "$CUDA_TARGET/bin/nvcc" 2>/dev/null && echo "✅ nvcc found after copy" || echo "❌ WARNING: nvcc not found after copy"; \
+    else \
+        echo "CUDA_SOURCE_PATH not set or directory not found: '$CUDA_SOURCE_PATH'"; \
+        echo "Will try to find CUDA at standard locations..."; \
     fi
 
 # Finde CUDA Installation (entweder gemountet oder kopiert)

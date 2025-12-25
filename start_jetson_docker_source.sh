@@ -56,7 +56,10 @@ else
     echo "$CUDA_PATH" > "$CUDA_TMP_DIR/cuda_path.txt"
     
     # Build mit CUDA im Build-Context
-    docker build --build-arg CUDA_SOURCE_PATH="$CUDA_TMP_DIR" \
+    # Verwende relativen Pfad ohne ./ Präfix
+    CUDA_RELATIVE_PATH=$(echo "$CUDA_TMP_DIR" | sed 's|^\./||')
+    echo "🔧 Building with CUDA from: $CUDA_RELATIVE_PATH"
+    docker build --build-arg CUDA_SOURCE_PATH="$CUDA_RELATIVE_PATH" \
         -f Dockerfile.jetson.source \
         -t katzenschreck:jetson-source .
     
