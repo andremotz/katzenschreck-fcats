@@ -74,21 +74,61 @@ RUN apt-get remove -y cmake 2>/dev/null || true && \
     ./cmake-3.24.0-linux-aarch64.sh --skip-license --prefix=/usr/local && \
     rm cmake-3.24.0-linux-aarch64.sh
 
-# CUDA Umgebungsvariablen setzen (KRITISCH für CUDA-Kompilierung)
+# Finde CUDA Installation und setze Umgebungsvariablen
+# CUDA kann an verschiedenen Orten installiert sein
+RUN NVCC_PATH=$(find /usr/local -name nvcc 2>/dev/null | head -1) && \
+    if [ -z "$NVCC_PATH" ]; then \
+        NVCC_PATH=$(find /usr -name nvcc 2>/dev/null | head -1); \
+    fi && \
+    if [ -z "$NVCC_PATH" ]; then \
+        echo "ERROR: nvcc not found! Searching for CUDA..." && \
+        find /usr -name "*cuda*" -type d 2>/dev/null | head -10 && \
+        exit 1; \
+    fi && \
+    CUDA_PATH=$(dirname $(dirname "$NVCC_PATH")) && \
+    echo "Found CUDA at: $CUDA_PATH" && \
+    echo "Found nvcc at: $NVCC_PATH" && \
+    echo "$CUDA_PATH" > /tmp/cuda_path.txt && \
+    $NVCC_PATH --version || (echo "ERROR: nvcc not accessible!" && exit 1)
+
+# Setze CUDA Umgebungsvariablen (Standard-Werte, werden in RUN-Befehlen überschrieben)
 ENV USE_CUDA=1
 ENV USE_CUDNN=1
 ENV TORCH_CUDA_ARCH_LIST="7.2"
-ENV CUDA_HOME=/usr/local/cuda
 ENV CMAKE_CUDA_ARCHITECTURES="72"
+
+# CUDA_HOME Standard-Wert (wird in RUN-Befehlen aus /tmp/cuda_path.txt gelesen)
+ENV CUDA_HOME=/usr/local/cuda
 ENV CMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc
 ENV PATH=/usr/local/cuda/bin:/usr/local/bin:$PATH
-ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/cuda/lib:$LD_LIBRARY_PATH
 
 # Python 3.11 in PATH setzen
 ENV PATH=/usr/local/bin:$PATH
 
-# Verify CUDA ist verfügbar
-RUN nvcc --version || (echo "ERROR: nvcc not found!" && exit 1)
+# Verify CUDA ist verfügbar (mit gefundenem Pfad)
+RUN CUDA_PATH=$(cat /tmp/cuda_path.txt 2>/dev/null) && \
+    if [ -n "$CUDA_PATH" ] && [ -f "$CUDA_PATH/bin/nvcc" ]; then \
+        export PATH=$CUDA_PATH/bin:$PATH && \
+        export CUDA_HOME=$CUDA_PATH && \
+        export LD_LIBRARY_PATH=$CUDA_PATH/lib64:$CUDA_PATH/lib:$LD_LIBRARY_PATH && \
+        echo "Using CUDA_HOME: $CUDA_HOME" && \
+        nvcc --version || (echo "ERROR: nvcc not accessible at $CUDA_PATH/bin/nvcc" && exit 1); \
+    else \
+        echo "WARNING: CUDA_PATH not found in /tmp/cuda_path.txt, trying default paths" && \
+        if [ -f "/usr/local/cuda/bin/nvcc" ]; then \
+            export PATH=/usr/local/cuda/bin:$PATH && \
+            export CUDA_HOME=/usr/local/cuda && \
+            nvcc --version || (echo "ERROR: nvcc not working with /usr/local/cuda" && exit 1); \
+        else \
+            NVCC_PATH=$(find /usr -name nvcc 2>/dev/null | head -1) && \
+            if [ -z "$NVCC_PATH" ]; then \
+                echo "ERROR: nvcc not found anywhere!" && exit 1; \
+            fi && \
+            echo "Found nvcc at: $NVCC_PATH" && \
+            $NVCC_PATH --version || (echo "ERROR: nvcc not working!" && exit 1); \
+        fi; \
+    fi
 
 # Install wheel für PyTorch Build
 RUN /usr/local/bin/python3.11 -m pip install --upgrade pip wheel setuptools
@@ -101,14 +141,30 @@ RUN cd /build && \
     git submodule update --init --recursive
 
 # Kompiliere PyTorch mit CUDA-Unterstützung
-RUN cd /build/pytorch && \
+# Setze CUDA-Umgebungsvariablen aus gefundenem Pfad
+RUN CUDA_PATH=$(cat /tmp/cuda_path.txt 2>/dev/null || echo "/usr/local/cuda") && \
+    export CUDA_HOME=$CUDA_PATH && \
+    export CMAKE_CUDA_COMPILER=$CUDA_PATH/bin/nvcc && \
+    export PATH=$CUDA_PATH/bin:$PATH && \
+    export LD_LIBRARY_PATH=$CUDA_PATH/lib64:$CUDA_PATH/lib:$LD_LIBRARY_PATH && \
+    export USE_CUDA=1 && \
+    export USE_CUDNN=1 && \
+    export TORCH_CUDA_ARCH_LIST="7.2" && \
+    export CMAKE_CUDA_ARCHITECTURES="72" && \
+    echo "Building PyTorch with CUDA_HOME: $CUDA_HOME" && \
+    cd /build/pytorch && \
     /usr/local/bin/python3.11 setup.py bdist_wheel
 
 # Verify PyTorch wheel wurde erstellt
 RUN ls -lh /build/pytorch/dist/torch-*.whl || (echo "ERROR: PyTorch wheel not found!" && exit 1)
 
 # Clone und kompiliere torchvision v0.16.0
-RUN cd /build && \
+# Setze CUDA-Umgebungsvariablen aus gefundenem Pfad
+RUN CUDA_PATH=$(cat /tmp/cuda_path.txt 2>/dev/null || echo "/usr/local/cuda") && \
+    export CUDA_HOME=$CUDA_PATH && \
+    export PATH=$CUDA_PATH/bin:$PATH && \
+    export LD_LIBRARY_PATH=$CUDA_PATH/lib64:$CUDA_PATH/lib:$LD_LIBRARY_PATH && \
+    cd /build && \
     git clone --recursive --branch v0.16.0 --depth 1 https://github.com/pytorch/vision && \
     cd vision && \
     /usr/local/bin/python3.11 setup.py bdist_wheel
