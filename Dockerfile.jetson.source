@@ -87,13 +87,21 @@ RUN apt-get remove -y cmake 2>/dev/null || true && \
 ARG CUDA_SOURCE_PATH=""
 
 # Kopiere CUDA-Bibliotheken aus Build-Context (falls buildx nicht verfügbar)
-# COPY kann nicht mit Variablen verwendet werden, daher kopieren wir das gesamte Verzeichnis
-# wenn es im Build-Context existiert
-COPY docker_cuda_temp /tmp/cuda_temp 2>/dev/null || \
-    (echo "docker_cuda_temp not found in build context, will try standard CUDA locations" && mkdir -p /tmp/cuda_temp)
+# COPY kann nicht mit Fehlerbehandlung verwendet werden, daher müssen wir prüfen,
+# ob das Verzeichnis existiert. Falls nicht, wird COPY fehlschlagen, aber wir fangen
+# das im RUN-Befehl ab.
+# Erstelle erst ein leeres Verzeichnis, dann kopiere falls vorhanden
+RUN mkdir -p /tmp/cuda_temp
+
+# Versuche CUDA-Verzeichnis zu kopieren (schlägt fehl, wenn nicht vorhanden - das ist OK)
+COPY docker_cuda_temp /tmp/cuda_temp_docker 2>/dev/null || true
 
 # Verschiebe kopierte CUDA-Dateien an den Zielort
-RUN if [ -d "/tmp/cuda_temp/bin" ] && [ -f "/tmp/cuda_temp/bin/nvcc" ]; then \
+RUN if [ -d "/tmp/cuda_temp_docker/bin" ] && [ -f "/tmp/cuda_temp_docker/bin/nvcc" ]; then \
+        echo "✅ CUDA files found in /tmp/cuda_temp_docker"; \
+        mv /tmp/cuda_temp_docker/* /tmp/cuda_temp/ 2>/dev/null || cp -r /tmp/cuda_temp_docker/* /tmp/cuda_temp/; \
+    fi && \
+    if [ -d "/tmp/cuda_temp/bin" ] && [ -f "/tmp/cuda_temp/bin/nvcc" ]; then \
         echo "✅ CUDA files found in /tmp/cuda_temp, moving to /usr/local/cuda-11.4"; \
         CUDA_TARGET="/usr/local/cuda-11.4"; \
         mkdir -p "$CUDA_TARGET"; \
