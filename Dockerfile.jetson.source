@@ -12,9 +12,12 @@
 # Build mit BuildKit für bessere Caching-Performance:
 #   DOCKER_BUILDKIT=1 docker build -f Dockerfile.jetson.source -t katzenschreck:jetson-source .
 
-# Base Image: NVIDIA L4T (Linux for Tegra) mit CUDA 11.4
-# R36.2.0 entspricht JetPack 6.x
-FROM nvcr.io/nvidia/l4t-base:r36.2.0 AS base
+# Base Image: Ultralytics Base Image (hat CUDA und Python, aber wir kompilieren PyTorch neu)
+# Dieses Image hat bereits CUDA installiert, was wir für die Kompilierung brauchen
+FROM ultralytics/ultralytics:latest-jetson-jetpack5 AS base
+
+# Deinstalliere vorhandenes PyTorch (wird neu kompiliert)
+RUN pip uninstall -y torch torchvision 2>/dev/null || true
 
 # ============================================================================
 # Stage 1: Python 3.11 Builder
@@ -23,32 +26,32 @@ FROM base AS python-builder
 
 WORKDIR /build
 
-# Install build dependencies für Python
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    zlib1g-dev \
-    libncurses5-dev \
-    libgdbm-dev \
-    libnss3-dev \
-    libssl-dev \
-    libreadline-dev \
-    libffi-dev \
-    libsqlite3-dev \
-    wget \
-    libbz2-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Download und kompiliere Python 3.11.9
-# Dauer: 30-60 Minuten
-RUN cd /tmp && \
-    wget -q https://www.python.org/ftp/python/3.11.9/Python-3.11.9.tgz && \
-    tar -xzf Python-3.11.9.tgz && \
-    cd Python-3.11.9 && \
-    ./configure --enable-optimizations --prefix=/usr/local && \
-    make -j$(nproc) && \
-    make altinstall && \
-    cd / && \
-    rm -rf /tmp/Python-3.11.9*
+# Prüfe Python-Version im Base Image
+RUN python3 --version || echo "Python not found" && \
+    python3.11 --version 2>/dev/null && echo "Python 3.11 already installed, skipping compilation" || \
+    (echo "Python 3.11 not found, will compile..." && \
+     apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        zlib1g-dev \
+        libncurses5-dev \
+        libgdbm-dev \
+        libnss3-dev \
+        libssl-dev \
+        libreadline-dev \
+        libffi-dev \
+        libsqlite3-dev \
+        wget \
+        libbz2-dev \
+        && rm -rf /var/lib/apt/lists/* && \
+        cd /tmp && \
+        wget -q https://www.python.org/ftp/python/3.11.9/Python-3.11.9.tgz && \
+        tar -xzf Python-3.11.9.tgz && \
+        cd Python-3.11.9 && \
+        ./configure --enable-optimizations --prefix=/usr/local && \
+        make -j$(nproc) && \
+        make altinstall && \
+        cd / && \
+        rm -rf /tmp/Python-3.11.9*)
 
 # ============================================================================
 # Stage 2: PyTorch Builder
@@ -74,7 +77,8 @@ RUN apt-get remove -y cmake 2>/dev/null || true && \
     ./cmake-3.24.0-linux-aarch64.sh --skip-license --prefix=/usr/local && \
     rm cmake-3.24.0-linux-aarch64.sh
 
-# Finde CUDA Installation und setze Umgebungsvariablen
+# Finde CUDA Installation (ultralytics Image hat bereits CUDA)
+# Setze Umgebungsvariablen
 # CUDA kann an verschiedenen Orten installiert sein
 RUN NVCC_PATH=$(find /usr/local -name nvcc 2>/dev/null | head -1) && \
     if [ -z "$NVCC_PATH" ]; then \
@@ -82,6 +86,9 @@ RUN NVCC_PATH=$(find /usr/local -name nvcc 2>/dev/null | head -1) && \
     fi && \
     if [ -z "$NVCC_PATH" ]; then \
         echo "ERROR: nvcc not found! Searching for CUDA..." && \
+        echo "Checking common CUDA locations:" && \
+        ls -la /usr/local/cuda* 2>/dev/null || echo "  /usr/local/cuda* not found" && \
+        ls -la /usr/local/cuda*/bin/nvcc 2>/dev/null || echo "  /usr/local/cuda*/bin/nvcc not found" && \
         find /usr -name "*cuda*" -type d 2>/dev/null | head -10 && \
         exit 1; \
     fi && \
