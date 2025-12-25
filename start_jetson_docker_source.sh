@@ -9,23 +9,8 @@ echo "🔨 Building Jetson Docker image with source-compiled PyTorch..."
 echo "⚠️  WARNUNG: Dieser Build dauert 3-5 Stunden!"
 echo ""
 
-# BuildKit ist ERFORDERLICH für --mount Option
-# Aktiviere BuildKit explizit
-export DOCKER_BUILDKIT=1
-
-if docker buildx version >/dev/null 2>&1; then
-    echo "✅ BuildKit verfügbar - verwende optimiertes Build"
-else
-    echo "⚠️  WARNING: BuildKit wird benötigt für CUDA-Mount!"
-    echo "   Installiere buildx oder aktiviere BuildKit in /etc/docker/daemon.json"
-fi
-
-# Build the Docker image
-# WICHTIG: CUDA muss vom Host-System gemountet werden
-echo "🔨 Building Docker image..."
-echo "📦 Mounting CUDA from host system..."
-
 # Finde CUDA-Pfad auf dem Host-System
+echo "🔍 Searching for CUDA..."
 CUDA_PATH=$(find /usr/local -name nvcc 2>/dev/null | head -1 | xargs dirname | xargs dirname)
 if [ -z "$CUDA_PATH" ]; then
     CUDA_PATH="/usr/local/cuda-11.4"
@@ -37,15 +22,47 @@ if [ ! -f "$CUDA_PATH/bin/nvcc" ]; then
     CUDA_PATH=$(find /usr/local -name nvcc 2>/dev/null | head -1 | xargs dirname | xargs dirname)
 fi
 
-if [ -f "$CUDA_PATH/bin/nvcc" ]; then
-    echo "✅ Found CUDA at: $CUDA_PATH"
-    echo "🔧 Building with BuildKit and CUDA mount..."
-    DOCKER_BUILDKIT=1 docker build --mount type=bind,source=$CUDA_PATH,target=$CUDA_PATH,readonly \
+if [ ! -f "$CUDA_PATH/bin/nvcc" ]; then
+    echo "❌ ERROR: CUDA not found! Please install CUDA or specify CUDA_PATH"
+    exit 1
+fi
+
+echo "✅ Found CUDA at: $CUDA_PATH"
+
+# Prüfe ob buildx verfügbar ist
+if docker buildx version >/dev/null 2>&1; then
+    echo "✅ BuildKit/buildx verfügbar - verwende CUDA-Mount"
+    export DOCKER_BUILDKIT=1
+    docker build --mount type=bind,source=$CUDA_PATH,target=$CUDA_PATH,readonly \
         -f Dockerfile.jetson.source \
         -t katzenschreck:jetson-source .
 else
-    echo "❌ ERROR: CUDA not found! Please install CUDA or specify CUDA_PATH"
-    exit 1
+    echo "⚠️  buildx nicht verfügbar - kopiere CUDA-Bibliotheken in Build-Context"
+    echo "   Dies kann einige Minuten dauern..."
+    
+    # Erstelle temporäres CUDA-Verzeichnis im Build-Context
+    CUDA_TMP_DIR="./.docker_cuda_temp"
+    mkdir -p "$CUDA_TMP_DIR"
+    
+    # Kopiere nur notwendige CUDA-Bibliotheken (bin, lib64, include)
+    echo "📦 Copying CUDA binaries..."
+    cp -r "$CUDA_PATH/bin" "$CUDA_TMP_DIR/" 2>/dev/null || true
+    echo "📦 Copying CUDA libraries..."
+    cp -r "$CUDA_PATH/lib64" "$CUDA_TMP_DIR/" 2>/dev/null || true
+    echo "📦 Copying CUDA headers..."
+    cp -r "$CUDA_PATH/include" "$CUDA_TMP_DIR/" 2>/dev/null || true
+    
+    # Speichere CUDA-Pfad für Dockerfile
+    echo "$CUDA_PATH" > "$CUDA_TMP_DIR/cuda_path.txt"
+    
+    # Build mit CUDA im Build-Context
+    docker build --build-arg CUDA_SOURCE_PATH="$CUDA_TMP_DIR" \
+        -f Dockerfile.jetson.source \
+        -t katzenschreck:jetson-source .
+    
+    # Aufräumen
+    echo "🧹 Cleaning up temporary CUDA files..."
+    rm -rf "$CUDA_TMP_DIR"
 fi
 
 # Stop and remove existing container if it exists

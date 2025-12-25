@@ -63,6 +63,9 @@ FROM python-builder AS pytorch-builder
 
 WORKDIR /build
 
+# Build-Argument für CUDA-Quelle (entweder gemountet oder aus Build-Context)
+ARG CUDA_SOURCE_PATH=""
+
 # Install build dependencies für PyTorch
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libopenblas-dev \
@@ -80,8 +83,19 @@ RUN apt-get remove -y cmake 2>/dev/null || true && \
     ./cmake-3.24.0-linux-aarch64.sh --skip-license --prefix=/usr/local && \
     rm cmake-3.24.0-linux-aarch64.sh
 
-# Finde CUDA Installation (vom Host-System gemountet)
-# CUDA wird vom Host-System gemountet und sollte unter /usr/local/cuda-11.4 verfügbar sein
+# Kopiere CUDA-Bibliotheken aus Build-Context (falls buildx nicht verfügbar)
+RUN if [ -n "$CUDA_SOURCE_PATH" ] && [ -d "$CUDA_SOURCE_PATH" ]; then \
+        echo "Copying CUDA from build context..."; \
+        CUDA_TARGET="/usr/local/cuda-11.4"; \
+        mkdir -p "$CUDA_TARGET"; \
+        if [ -d "$CUDA_SOURCE_PATH/bin" ]; then cp -r "$CUDA_SOURCE_PATH/bin" "$CUDA_TARGET/"; fi; \
+        if [ -d "$CUDA_SOURCE_PATH/lib64" ]; then cp -r "$CUDA_SOURCE_PATH/lib64" "$CUDA_TARGET/"; fi; \
+        if [ -d "$CUDA_SOURCE_PATH/include" ]; then cp -r "$CUDA_SOURCE_PATH/include" "$CUDA_TARGET/"; fi; \
+        echo "$CUDA_TARGET" > /tmp/cuda_path.txt; \
+        echo "CUDA copied to: $CUDA_TARGET"; \
+    fi
+
+# Finde CUDA Installation (entweder gemountet oder kopiert)
 RUN CUDA_PATHS="/usr/local/cuda-11.4 /usr/local/cuda /usr/local/cuda-12.0" && \
     CUDA_FOUND="" && \
     for path in $CUDA_PATHS; do \
@@ -94,7 +108,7 @@ RUN CUDA_PATHS="/usr/local/cuda-11.4 /usr/local/cuda /usr/local/cuda-12.0" && \
         fi; \
     done && \
     if [ -z "$CUDA_FOUND" ]; then \
-        echo "ERROR: CUDA not found! Please mount CUDA from host system:" && \
+        echo "ERROR: CUDA not found! Please mount CUDA from host system or use buildx:" && \
         echo "  docker build --mount type=bind,source=/usr/local/cuda-11.4,target=/usr/local/cuda-11.4,readonly ..." && \
         echo "Searching for CUDA..." && \
         find /usr/local -name nvcc 2>/dev/null | head -5 && \
