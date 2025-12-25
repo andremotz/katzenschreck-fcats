@@ -13,8 +13,8 @@
 #   DOCKER_BUILDKIT=1 docker build -f Dockerfile.jetson.source -t katzenschreck:jetson-source .
 
 # Base Image: NVIDIA L4T (Linux for Tegra) mit CUDA 11.4
-# R35 entspricht JetPack 6.3
-FROM nvcr.io/nvidia/l4t-base:r35.2.0 AS base
+# R36.2.0 entspricht JetPack 6.x
+FROM nvcr.io/nvidia/l4t-base:r36.2.0 AS base
 
 # ============================================================================
 # Stage 1: Python 3.11 Builder
