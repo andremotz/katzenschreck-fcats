@@ -9,12 +9,15 @@ echo "🔨 Building Jetson Docker image with source-compiled PyTorch..."
 echo "⚠️  WARNUNG: Dieser Build dauert 3-5 Stunden!"
 echo ""
 
-# Prüfe ob BuildKit verfügbar ist (empfohlen für besseres Caching)
+# BuildKit ist ERFORDERLICH für --mount Option
+# Aktiviere BuildKit explizit
+export DOCKER_BUILDKIT=1
+
 if docker buildx version >/dev/null 2>&1; then
     echo "✅ BuildKit verfügbar - verwende optimiertes Build"
-    export DOCKER_BUILDKIT=1
 else
-    echo "ℹ️  BuildKit nicht verfügbar - verwende Standard Build"
+    echo "⚠️  WARNING: BuildKit wird benötigt für CUDA-Mount!"
+    echo "   Installiere buildx oder aktiviere BuildKit in /etc/docker/daemon.json"
 fi
 
 # Build the Docker image
@@ -36,7 +39,8 @@ fi
 
 if [ -f "$CUDA_PATH/bin/nvcc" ]; then
     echo "✅ Found CUDA at: $CUDA_PATH"
-    docker build --mount type=bind,source=$CUDA_PATH,target=$CUDA_PATH,readonly \
+    echo "🔧 Building with BuildKit and CUDA mount..."
+    DOCKER_BUILDKIT=1 docker build --mount type=bind,source=$CUDA_PATH,target=$CUDA_PATH,readonly \
         -f Dockerfile.jetson.source \
         -t katzenschreck:jetson-source .
 else
