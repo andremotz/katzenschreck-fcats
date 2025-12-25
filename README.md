@@ -78,6 +78,18 @@ docker run -d \
 - Easy scaling and orchestration
 - No need to manage Python environments locally
 
+## Additional Documentation
+
+This repository includes specialized documentation for Jetson devices:
+
+- **[README_DOCKER_JETSON.md](README_DOCKER_JETSON.md)**: Complete guide for running Katzenschreck in a Docker container on NVIDIA Jetson devices. This is the recommended approach for production deployments on Jetson, as it provides a pre-configured environment with all dependencies (including PyTorch with CUDA support) already built and optimized.
+
+- **[JETSON_PYTORCH_SETUP.md](JETSON_PYTORCH_SETUP.md)**: Step-by-step instructions for setting up PyTorch with CUDA support natively on Jetson Nano without Docker. This guide covers compiling Python 3.11 from source, building PyTorch and torchvision with CUDA support, and configuring the environment for optimal GPU acceleration. Use this if you prefer native installation or need to customize the Python/PyTorch setup.
+
+**When to use which guide:**
+- **Docker approach** (README_DOCKER_JETSON.md): Faster setup, easier maintenance, recommended for most users
+- **Native approach** (JETSON_PYTORCH_SETUP.md): More control, custom Python versions, advanced configurations
+
 ## Manual Usage
 
 If you prefer to run manually without automation:
@@ -157,12 +169,64 @@ graph TB
 
 ## Configuration
 
-The `config.txt` should contain the following parameters:
+The `config.txt` file contains all system configuration parameters. Copy `config.txt.example` to `config.txt` and adjust the values for your environment.
 
-- **RTSP Stream**: `rtsp_stream_url`
-- **MQTT**: `mqtt_broker_url`, `mqtt_topic`, etc.
-- **Database**: `db_host`, `db_user`, `db_password`, `db_database`
-- **Object Detection**: `confidence_threshold`, `ignore_zone`
+### RTSP Stream Configuration
+
+- **`rtsp_stream_url`** (required): Full RTSP URL for the IP camera stream
+  - Example: `rtsp://username:password@192.168.1.100:554/stream1`
+- **`rtsp_transport`** (optional, default: `udp`): Transport protocol for RTSP stream
+  - Options: `udp` (lower latency, recommended) or `tcp` (more reliable but higher latency)
+- **`rtsp_low_delay`** (optional, default: `true`): Enable low delay mode for RTSP stream
+  - Reduces buffering to minimize frame delay
+- **`rtsp_connection_mode`** (optional, default: `continuous`): RTSP connection strategy
+  - `continuous`: Maintains persistent connection (faster, but may buffer old frames)
+  - `reconnect_per_frame`: Reconnects for each frame (slower, but ensures freshest frame)
+  - Use `reconnect_per_frame` if you experience frame drift/delay issues
+
+### MQTT Configuration
+
+- **`mqtt_broker_url`** (required): MQTT broker hostname or IP address
+- **`mqtt_broker_port`** (optional, default: `1883`): MQTT broker port
+- **`mqtt_topic`** (required): MQTT topic for publishing detection alerts
+- **`mqtt_username`** (required): MQTT authentication username
+- **`mqtt_password`** (required): MQTT authentication password
+
+### Database Configuration
+
+- **`db_host`** (optional, default: `localhost`): MariaDB/MySQL database host
+- **`db_user`** (optional, default: `katzenschreck_app`): Database username
+- **`db_password`** (optional, default: `p7eWPjGeIRXtMvCJw--`): Database password
+- **`db_database`** (optional, default: `katzenschreck`): Database name
+- **`camera_name`** (optional, default: `cam_garten`): Camera identifier for database records
+
+### Object Detection Configuration
+
+- **`confidence_threshold`** (optional, default: `0.5`): Minimum confidence level (0.0-1.0) required for detections
+  - Lower values = more detections (including false positives)
+  - Higher values = fewer detections (only high-confidence matches)
+- **`usage_threshold`** (optional, default: `0.8`): Disk usage threshold (0.0-1.0)
+  - When exceeded, oldest images are automatically deleted to free space
+- **`yolo_model`** (optional): Specific YOLO model to use
+  - If not set, auto-detection based on hardware will be used
+  - Options: `yolo11x.pt`, `yolo11l.pt`, `yolo11m.pt`, `yolo11s.pt`, `yolo11n.pt`
+  - Larger models (x, l) = better accuracy but slower
+  - Smaller models (s, n) = faster but less accurate
+- **`ignore_zone`** (optional): Area to ignore for detections
+  - Format: `x_min,y_min,x_max,y_max` as decimal values (0.0-1.0)
+  - Example: `0.1,0.1,0.3,0.3` ignores the top-left 20% of the frame
+
+### Monitoring Configuration
+
+- **`monitoring_enabled`** (optional, default: `true`): Enable real-time monitoring web server
+  - Provides web interface at `http://localhost:8080` for performance monitoring
+- **`monitoring_port`** (optional, default: `8080`): Port for the monitoring web server
+
+### Hardware Configuration
+
+- **`hardware_type`** (optional): Override automatic hardware detection
+  - Use when automatic detection fails (e.g., in Docker containers)
+  - Options: `jetson`, `raspberry_pi`, `generic`
 
 ## Database Schema
 
