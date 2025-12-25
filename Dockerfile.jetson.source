@@ -88,7 +88,13 @@ ARG CUDA_SOURCE_PATH=""
 
 # Kopiere CUDA-Bibliotheken aus Build-Context (falls buildx nicht verfügbar)
 RUN echo "CUDA_SOURCE_PATH: $CUDA_SOURCE_PATH" && \
+    echo "Current directory: $(pwd)" && \
+    echo "Listing build context root:" && \
+    ls -la / | head -20 && \
+    echo "Listing current directory:" && \
+    ls -la . | head -20 && \
     if [ -n "$CUDA_SOURCE_PATH" ] && [ -d "$CUDA_SOURCE_PATH" ]; then \
+        echo "✅ Directory found: $CUDA_SOURCE_PATH"; \
         echo "Copying CUDA from build context: $CUDA_SOURCE_PATH"; \
         ls -la "$CUDA_SOURCE_PATH" || echo "Cannot list CUDA_SOURCE_PATH"; \
         CUDA_TARGET="/usr/local/cuda-11.4"; \

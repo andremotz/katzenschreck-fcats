@@ -41,7 +41,8 @@ else
     echo "   Dies kann einige Minuten dauern..."
     
     # Erstelle temporäres CUDA-Verzeichnis im Build-Context
-    CUDA_TMP_DIR="./.docker_cuda_temp"
+    # Verwende einen Namen ohne Punkt am Anfang, damit .dockerignore es nicht ignoriert
+    CUDA_TMP_DIR="./docker_cuda_temp"
     mkdir -p "$CUDA_TMP_DIR"
     
     # Kopiere nur notwendige CUDA-Bibliotheken (bin, lib64, include)
@@ -55,10 +56,24 @@ else
     # Speichere CUDA-Pfad für Dockerfile
     echo "$CUDA_PATH" > "$CUDA_TMP_DIR/cuda_path.txt"
     
+    # Prüfe ob Dateien kopiert wurden
+    if [ ! -d "$CUDA_TMP_DIR/bin" ] || [ ! -f "$CUDA_TMP_DIR/bin/nvcc" ]; then
+        echo "❌ ERROR: Failed to copy CUDA files to $CUDA_TMP_DIR"
+        echo "   Checking if CUDA_PATH is correct: $CUDA_PATH"
+        ls -la "$CUDA_PATH/bin/nvcc" || echo "   nvcc not found at source"
+        exit 1
+    fi
+    
+    echo "✅ CUDA files copied successfully"
+    ls -la "$CUDA_TMP_DIR/bin/nvcc" || echo "WARNING: nvcc not found in temp dir"
+    
     # Build mit CUDA im Build-Context
     # Verwende relativen Pfad ohne ./ Präfix
     CUDA_RELATIVE_PATH=$(echo "$CUDA_TMP_DIR" | sed 's|^\./||')
     echo "🔧 Building with CUDA from: $CUDA_RELATIVE_PATH"
+    echo "   Verifying path exists before build..."
+    ls -la "$CUDA_RELATIVE_PATH" || echo "WARNING: Path not found: $CUDA_RELATIVE_PATH"
+    
     docker build --build-arg CUDA_SOURCE_PATH="$CUDA_RELATIVE_PATH" \
         -f Dockerfile.jetson.source \
         -t katzenschreck:jetson-source .
