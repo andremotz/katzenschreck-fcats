@@ -25,12 +25,6 @@ if [ ! -f "$SCRIPT_DIR/start_script.sh" ]; then
     exit 1
 fi
 
-# Check if run_katzenschreck.sh exists (create if not)
-if [ ! -f "$SCRIPT_DIR/run_katzenschreck.sh" ]; then
-    echo "❌ Error: run_katzenschreck.sh not found in $SCRIPT_DIR"
-    exit 1
-fi
-
 # Run setup using start_script.sh (venv, dependencies, models)
 echo "🔧 Running setup via start_script.sh..."
 echo "   (This will create venv, install dependencies, and download models if needed)"

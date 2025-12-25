@@ -51,7 +51,12 @@ Use the start script to automatically set up the environment and run the system 
 ./start_script.sh
 ```
 
-**Note**: The start script will automatically:
+**Note**: The start script supports different modes:
+- `./start_script.sh` - Full mode: Setup (venv, dependencies, models) + Run
+- `./start_script.sh --setup-only` - Only setup: Creates venv, installs dependencies, downloads models
+- `./start_script.sh --run-only` - Only run: Assumes setup is done, just starts the application
+
+The start script will automatically:
 - Create a Python virtual environment in `cat_detector/venv/`
 - Install all required dependencies from `requirements.txt`
 - Activate the virtual environment

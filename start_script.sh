@@ -2,7 +2,48 @@
 
 # Katzenschreck Universal Start Script
 # Automatically detects hardware and uses optimal configuration
+#
+# Usage:
+#   ./start_script.sh              - Setup + Run (full mode)
+#   ./start_script.sh --setup-only  - Only setup (venv, dependencies, models)
+#   ./start_script.sh --run-only   - Only run (assumes setup is done)
 
+# Repository directory, which is the same as this script's directory + /cat_detector
+REPO_DIR=$(pwd)/cat_detector
+
+# Virtual environment directory
+# Set VENV_DIR based on REPO_DIR
+VENV_DIR="${REPO_DIR}/venv"
+
+# Check if --run-only flag is set (skip setup, just run)
+if [ "$1" = "--run-only" ]; then
+    # Verify venv exists
+    if [ ! -d "$VENV_DIR" ]; then
+        echo "❌ Error: Virtual environment not found at $VENV_DIR"
+        echo "   Please run './start_script.sh --setup-only' first to create the environment"
+        exit 1
+    fi
+    
+    # Change to repository directory
+    cd $REPO_DIR
+    
+    # Activate virtual environment
+    source $VENV_DIR/bin/activate
+    
+    # Run the Python script
+    echo "🚀 Starting Katzenschreck detection system..."
+    echo "======================================================"
+    
+    # Change to parent directory to run as module
+    cd ..
+    python3 -m cat_detector.main $REPO_DIR/results
+    
+    # Deactivate virtual environment (optional, when process ends)
+    deactivate
+    exit 0
+fi
+
+# Normal mode: Setup (and optionally run)
 echo "🐱 Starting Katzenschreck - Universal Detection System"
 echo "======================================================"
 
@@ -13,13 +54,6 @@ git pull https://github.com/andremotz/katzenschreck.git
 
 # Remove config.txt from index
 git rm --cached config.txt
-
-# Repository directory, which is the same as this script's directory + /cat_detector
-REPO_DIR=$(pwd)/cat_detector
-
-# Virtual environment directory
-# Set VENV_DIR based on REPO_DIR
-VENV_DIR="${REPO_DIR}/venv"
 
 # Change to repository directory
 cd $REPO_DIR
@@ -115,6 +149,7 @@ if [ "$1" = "--setup-only" ]; then
     exit 0
 fi
 
+# Normal mode: Setup + Run
 # Run the Python script with global variables RTSP_STREAM_URL and OUTPUT_DIR
 echo "🚀 Starting Katzenschreck detection system..."
 echo "======================================================"
