@@ -25,12 +25,6 @@ if [ ! -f "$SCRIPT_DIR/start_script.sh" ]; then
     exit 1
 fi
 
-# Run setup using start_script.sh (venv, dependencies, models)
-echo "🔧 Running setup via start_script.sh..."
-echo "   (This will create venv, install dependencies, and download models if needed)"
-cd "$SCRIPT_DIR"
-bash "$SCRIPT_DIR/start_script.sh" --setup-only
-
 # Create systemd user directory if it doesn't exist
 echo "📁 Creating systemd user directory..."
 mkdir -p "$SYSTEMD_USER_DIR"
