@@ -1,0 +1,28 @@
+[Unit]
+Description=Katzenschreck Cat Detection System
+Documentation=https://github.com/andremotz/katzenschreck
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=PROJECT_DIR_PLACEHOLDER
+ExecStart=PROJECT_DIR_PLACEHOLDER/start_script.sh
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=katzenschreck
+
+# Environment variables
+Environment=PYTHONPATH=PROJECT_DIR_PLACEHOLDER
+Environment=PYTHONUNBUFFERED=1
+
+# Security settings (relaxed for user service)
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target
+

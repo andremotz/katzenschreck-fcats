@@ -78,6 +78,49 @@ docker run -d \
 - Easy scaling and orchestration
 - No need to manage Python environments locally
 
+#### Option C: systemd Service (Recommended for Production Native Setup)
+Run Katzenschreck as a systemd user service for automatic startup and process management:
+
+```bash
+# Install the systemd service
+./install_systemd_service.sh
+```
+
+The installation script will:
+- Create a systemd user service configuration
+- Enable automatic startup on boot
+- Start the service immediately
+- Configure logging via journald
+
+**Service Management Commands**:
+```bash
+# Check service status
+systemctl --user status katzenschreck
+
+# View live logs
+journalctl --user -u katzenschreck -f
+
+# Stop/start/restart service
+systemctl --user stop katzenschreck
+systemctl --user start katzenschreck
+systemctl --user restart katzenschreck
+
+# Disable auto-start on boot
+systemctl --user disable katzenschreck
+```
+
+**Uninstall the service**:
+```bash
+./uninstall_systemd_service.sh
+```
+
+**systemd Service Benefits**:
+- Automatic startup on system boot
+- Automatic restart on failure
+- Centralized logging via journald
+- Process management and monitoring
+- No need to manually start the application
+
 ## Additional Documentation
 
 This repository includes specialized documentation for Jetson devices:
