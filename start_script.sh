@@ -20,18 +20,14 @@ else
     echo "======================================================"
 fi
 
-# Repository directory, which is the same as this script's directory + /cat_detector
-REPO_DIR=$(pwd)/cat_detector
+# Repository directory (project root)
+REPO_DIR=$(pwd)
 
-# Virtual environment directory
-# Set VENV_DIR based on REPO_DIR
+# Virtual environment directory (in project root)
 VENV_DIR="${REPO_DIR}/venv"
 
 # Requirements file (always use requirements.txt for native operation)
-REQUIREMENTS_FILE="${REPO_DIR}/requirements.txt"
-
-# Change to repository directory
-cd $REPO_DIR
+REQUIREMENTS_FILE="${REPO_DIR}/cat_detector/requirements.txt"
 
 # Create virtual environment if it doesn't exist
 VENV_JUST_CREATED=false
@@ -106,9 +102,7 @@ if [ "$1" = "--run-only" ]; then
     echo "🚀 Starting Katzenschreck detection system..."
     echo "======================================================"
     
-    # Change to parent directory to run as module
-    cd ..
-    python3 -m cat_detector.main $REPO_DIR/results
+    python3 -m cat_detector.main ${REPO_DIR}/results
     
     # Deactivate virtual environment (optional, when process ends)
     deactivate
@@ -120,9 +114,7 @@ fi
 echo "🚀 Starting Katzenschreck detection system..."
 echo "======================================================"
 
-# Change to parent directory to run as module
-cd ..
-python3 -m cat_detector.main $REPO_DIR/results
+python3 -m cat_detector.main ${REPO_DIR}/results
 
 # Deactivate virtual environment (optional, when process ends)
 deactivate
