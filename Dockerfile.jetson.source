@@ -1,0 +1,213 @@
+# Dockerfile.jetson.source - PyTorch von Source kompilieren
+# WARNUNG: Build dauert 3-5 Stunden auf Jetson Nano!
+# 
+# Dieses Dockerfile kompiliert:
+# - Python 3.11 von Source
+# - PyTorch 2.1.0 von Source mit CUDA 11.4
+# - torchvision 0.16.0 von Source
+#
+# Verwendung:
+#   docker build -f Dockerfile.jetson.source -t katzenschreck:jetson-source .
+#
+# Build mit BuildKit für bessere Caching-Performance:
+#   DOCKER_BUILDKIT=1 docker build -f Dockerfile.jetson.source -t katzenschreck:jetson-source .
+
+# Base Image: NVIDIA L4T (Linux for Tegra) mit CUDA 11.4
+# R35 entspricht JetPack 6.3
+FROM nvcr.io/nvidia/l4t-base:r35.2.0 AS base
+
+# ============================================================================
+# Stage 1: Python 3.11 Builder
+# ============================================================================
+FROM base AS python-builder
+
+WORKDIR /build
+
+# Install build dependencies für Python
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    zlib1g-dev \
+    libncurses5-dev \
+    libgdbm-dev \
+    libnss3-dev \
+    libssl-dev \
+    libreadline-dev \
+    libffi-dev \
+    libsqlite3-dev \
+    wget \
+    libbz2-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download und kompiliere Python 3.11.9
+# Dauer: 30-60 Minuten
+RUN cd /tmp && \
+    wget -q https://www.python.org/ftp/python/3.11.9/Python-3.11.9.tgz && \
+    tar -xzf Python-3.11.9.tgz && \
+    cd Python-3.11.9 && \
+    ./configure --enable-optimizations --prefix=/usr/local && \
+    make -j$(nproc) && \
+    make altinstall && \
+    cd / && \
+    rm -rf /tmp/Python-3.11.9*
+
+# ============================================================================
+# Stage 2: PyTorch Builder
+# ============================================================================
+FROM python-builder AS pytorch-builder
+
+WORKDIR /build
+
+# Install build dependencies für PyTorch
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libopenblas-dev \
+    libblas-dev \
+    liblapack-dev \
+    libatlas-base-dev \
+    git \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Update CMake (PyTorch benötigt >= 3.18.0)
+RUN apt-get remove -y cmake 2>/dev/null || true && \
+    wget -q https://github.com/Kitware/CMake/releases/download/v3.24.0/cmake-3.24.0-linux-aarch64.sh && \
+    chmod +x cmake-3.24.0-linux-aarch64.sh && \
+    ./cmake-3.24.0-linux-aarch64.sh --skip-license --prefix=/usr/local && \
+    rm cmake-3.24.0-linux-aarch64.sh
+
+# CUDA Umgebungsvariablen setzen (KRITISCH für CUDA-Kompilierung)
+ENV USE_CUDA=1
+ENV USE_CUDNN=1
+ENV TORCH_CUDA_ARCH_LIST="7.2"
+ENV CUDA_HOME=/usr/local/cuda
+ENV CMAKE_CUDA_ARCHITECTURES="72"
+ENV CMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc
+ENV PATH=/usr/local/cuda/bin:/usr/local/bin:$PATH
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+
+# Python 3.11 in PATH setzen
+ENV PATH=/usr/local/bin:$PATH
+
+# Verify CUDA ist verfügbar
+RUN nvcc --version || (echo "ERROR: nvcc not found!" && exit 1)
+
+# Install wheel für PyTorch Build
+RUN /usr/local/bin/python3.11 -m pip install --upgrade pip wheel setuptools
+
+# Clone PyTorch v2.1.0
+# Dauer: 2-4 Stunden Kompilierung
+RUN cd /build && \
+    git clone --recursive --branch v2.1.0 --depth 1 https://github.com/pytorch/pytorch && \
+    cd pytorch && \
+    git submodule update --init --recursive
+
+# Kompiliere PyTorch mit CUDA-Unterstützung
+RUN cd /build/pytorch && \
+    /usr/local/bin/python3.11 setup.py bdist_wheel
+
+# Verify PyTorch wheel wurde erstellt
+RUN ls -lh /build/pytorch/dist/torch-*.whl || (echo "ERROR: PyTorch wheel not found!" && exit 1)
+
+# Clone und kompiliere torchvision v0.16.0
+RUN cd /build && \
+    git clone --recursive --branch v0.16.0 --depth 1 https://github.com/pytorch/vision && \
+    cd vision && \
+    /usr/local/bin/python3.11 setup.py bdist_wheel
+
+# Verify torchvision wheel wurde erstellt
+RUN ls -lh /build/vision/dist/torchvision-*.whl || (echo "ERROR: torchvision wheel not found!" && exit 1)
+
+# ============================================================================
+# Stage 3: Final Runtime Image
+# ============================================================================
+FROM base
+
+WORKDIR /katzenschreck
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    ffmpeg \
+    libavcodec58 \
+    libavformat58 \
+    libavutil56 \
+    libswscale5 \
+    libswresample3 \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy Python 3.11 von Builder Stage
+COPY --from=python-builder /usr/local/bin/python3.11 /usr/local/bin/python3.11
+COPY --from=python-builder /usr/local/bin/pip3.11 /usr/local/bin/pip3.11
+COPY --from=python-builder /usr/local/lib/python3.11 /usr/local/lib/python3.11
+COPY --from=python-builder /usr/local/include/python3.11 /usr/local/include/python3.11
+
+# Python 3.11 in PATH
+ENV PATH=/usr/local/bin:$PATH
+
+# Upgrade pip
+RUN /usr/local/bin/python3.11 -m pip install --upgrade pip setuptools wheel
+
+# Copy kompilierte PyTorch und torchvision Wheels
+COPY --from=pytorch-builder /build/pytorch/dist/*.whl /tmp/pytorch-wheels/
+COPY --from=pytorch-builder /build/vision/dist/*.whl /tmp/torchvision-wheels/
+
+# Install PyTorch und torchvision (ohne Dependencies, um CPU-only Versionen zu vermeiden)
+RUN /usr/local/bin/python3.11 -m pip install --no-cache-dir \
+    /tmp/pytorch-wheels/torch-*.whl --no-deps && \
+    /usr/local/bin/python3.11 -m pip install --no-cache-dir \
+    /tmp/torchvision-wheels/torchvision-*.whl --no-deps && \
+    rm -rf /tmp/pytorch-wheels /tmp/torchvision-wheels
+
+# Install PyTorch Dependencies (nach Installation von PyTorch)
+RUN /usr/local/bin/python3.11 -m pip install --no-cache-dir \
+    typing-extensions \
+    sympy \
+    networkx \
+    filelock \
+    fsspec \
+    jinja2 \
+    markupsafe
+
+# CUDA Umgebungsvariablen für Runtime
+ENV PATH=/usr/local/cuda/bin:$PATH
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+ENV PYTHONUNBUFFERED=1
+
+# Verify PyTorch CUDA Installation
+RUN /usr/local/bin/python3.11 -c "import torch; import os; lib_path = os.path.join(os.path.dirname(torch.__file__), 'lib'); files = os.listdir(lib_path) if os.path.exists(lib_path) else []; cuda_files = [f for f in files if 'cuda' in f.lower()]; print(f'PyTorch Version: {torch.__version__}'); print(f'CUDA libs found: {len(cuda_files)} files'); assert len(cuda_files) > 0, 'ERROR: No CUDA libraries found in PyTorch installation!'; print('✅ PyTorch wurde mit CUDA-Unterstützung installiert')" || \
+    (echo "ERROR: PyTorch CUDA verification failed!" && exit 1)
+
+# Install ultralytics (für YOLO)
+RUN /usr/local/bin/python3.11 -m pip install --no-cache-dir \
+    ultralytics>=8.0.0
+
+# Install application dependencies
+COPY cat_detector/requirements_jetson.txt /katzenschreck/requirements_jetson.txt
+RUN /usr/local/bin/python3.11 -m pip install --no-cache-dir \
+    opencv-python==4.8.1.78 \
+    paho-mqtt==2.1.0 \
+    mysql-connector-python==8.0.33 \
+    psutil \
+    fastapi \
+    uvicorn[standard] \
+    websockets
+
+# Copy application code
+COPY cat_detector/ /katzenschreck/cat_detector/
+COPY config.txt /katzenschreck/config.txt 2>/dev/null || echo "# Config will be mounted" > /katzenschreck/config.txt
+COPY runs/ /katzenschreck/runs/ 2>/dev/null || mkdir -p /katzenschreck/runs/
+
+# Create results directory
+RUN mkdir -p /katzenschreck/results
+
+# Pre-download YOLO11x model
+RUN /usr/local/bin/python3.11 -c "from ultralytics import YOLO; YOLO('yolo11x.pt')" || echo "WARNING: YOLO model download failed, will download at runtime"
+
+# Final CUDA Test
+RUN cd /katzenschreck && \
+    /usr/local/bin/python3.11 -c "import torch; print(f'✅ CUDA Available: {torch.cuda.is_available()}'); print(f'✅ PyTorch Version: {torch.__version__}'); print(f'✅ CUDA Version: {torch.version.cuda if torch.cuda.is_available() else \"N/A\"}'); assert torch.cuda.is_available(), 'ERROR: CUDA not available!'; print('✅ PyTorch CUDA Setup erfolgreich!')" || \
+    (echo "ERROR: Final CUDA test failed!" && exit 1)
+
+# Default command
+CMD ["/usr/local/bin/python3.11", "-m", "cat_detector.main", "/katzenschreck/results"]
+

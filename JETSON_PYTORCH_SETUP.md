@@ -88,29 +88,56 @@ cmake --version
 ### 5. Compile PyTorch from Source
 
 ```bash
-# Clone PyTorch:
-cd ~
-git clone --recursive --branch v2.1.0 https://github.com/pytorch/pytorch
-cd pytorch
-git submodule update --init --recursive
+# IMPORTANT: If you have a CPU-only PyTorch installed, uninstall it first:
+pip uninstall torch torchvision -y
 
-# Set environment variables for CUDA compilation:
+# Clone PyTorch (or update if already exists):
+cd ~
+if [ -d "pytorch" ]; then
+    echo "PyTorch repository already exists, updating..."
+    cd pytorch
+    git fetch origin
+    git checkout v2.1.0
+    git submodule update --init --recursive
+else
+    git clone --recursive --branch v2.1.0 https://github.com/pytorch/pytorch
+    cd pytorch
+    git submodule update --init --recursive
+fi
+
+# Set environment variables for CUDA compilation (CRITICAL - must be set before compilation):
 export USE_CUDA=1
 export USE_CUDNN=1
 export TORCH_CUDA_ARCH_LIST="7.2"  # Jetson Nano Compute Capability
 export CUDA_HOME=/usr/local/cuda-11.4
 export CMAKE_CUDA_ARCHITECTURES="72"
 export CMAKE_CUDA_COMPILER=/usr/local/cuda-11.4/bin/nvcc
+export PATH=/usr/local/cuda-11.4/bin:$PATH
+export LD_LIBRARY_PATH=/usr/local/cuda-11.4/lib64:$LD_LIBRARY_PATH
+
+# Verify CUDA is accessible:
+nvcc --version
+# Should show: Cuda compilation tools, release 11.4
 
 # Install wheel (if not already present):
 pip install wheel
 
 # Compile PyTorch (takes 2-4 hours!):
+# Use screen or tmux for long-running process:
+# screen -S pytorch_build
 python3.11 setup.py bdist_wheel
 
-# After successful compilation, install:
+# After successful compilation, verify the wheel contains CUDA:
+# Check that dist/torch-*.whl exists and is recent
+ls -lh dist/torch-*.whl
+
+# Install the compiled wheel:
 cd ~/pytorch
-pip install dist/torch-*.whl
+pip install dist/torch-*.whl --force-reinstall --no-deps
+
+# Verify CUDA libraries are included in the installation:
+python3.11 -c "import torch; import os; lib_path = os.path.join(os.path.dirname(torch.__file__), 'lib'); files = os.listdir(lib_path) if os.path.exists(lib_path) else []; cuda_files = [f for f in files if 'cuda' in f.lower()]; print(f'CUDA libs found: {len(cuda_files)} files'); print(f'First 10: {cuda_files[:10]}')"
+# Should show CUDA libraries, not an empty list
 ```
 
 ### 6. Test CUDA Availability
@@ -166,8 +193,15 @@ python3.11 -c "import torch; print(f'GPU Memory Allocated: {torch.cuda.memory_al
 
 ### Problem: "CUDA Available: False"
 
-- Check if PyTorch was compiled with CUDA libraries: `python3.11 -c "import torch; import os; lib_path = os.path.join(os.path.dirname(torch.__file__), 'lib'); files = os.listdir(lib_path); cuda_files = [f for f in files if 'cuda' in f.lower()]; print(f'CUDA libs: {cuda_files}')"`
-- If no CUDA libraries are found, PyTorch was compiled without CUDA. Recompile with correct environment variables.
+- Check if PyTorch was compiled with CUDA libraries: `python3.11 -c "import torch; import os; lib_path = os.path.join(os.path.dirname(torch.__file__), 'lib'); files = os.listdir(lib_path) if os.path.exists(lib_path) else []; cuda_files = [f for f in files if 'cuda' in f.lower()]; print(f'CUDA libs: {cuda_files[:10]}')"`
+- If no CUDA libraries are found (`CUDA libs found: []`), PyTorch was installed as CPU-only version (likely via pip). You need to:
+  1. **Uninstall the CPU-only PyTorch:**
+     ```bash
+     pip uninstall torch torchvision -y
+     ```
+  2. **Recompile PyTorch from source with CUDA support** (follow Step 5 in this document)
+  3. **Important:** Make sure you're in the virtual environment and set all CUDA environment variables before compilation
+  4. **After compilation, verify** that CUDA libraries are present before installing the wheel
 
 ### Problem: "out of memory"
 
@@ -185,6 +219,16 @@ python3.11 -c "import torch; print(f'GPU Memory Allocated: {torch.cuda.memory_al
 - Verify Python 3.11 is in PATH: `which python3.11`
 - If not found, add to PATH: `export PATH=/usr/local/bin:$PATH`
 - Or use full path: `/usr/local/bin/python3.11`
+
+### Problem: PyTorch Version Mismatch (e.g., 2.2.2 instead of 2.1.0)
+
+- If you see a different PyTorch version than expected (e.g., 2.2.2), it means a CPU-only version was installed via pip
+- This happens if `pip install torch` was run without specifying the source-compiled wheel
+- Solution:
+  1. Uninstall: `pip uninstall torch torchvision -y`
+  2. Reinstall from your compiled wheel: `pip install ~/pytorch/dist/torch-*.whl --force-reinstall --no-deps`
+  3. Make sure you're in the correct virtual environment
+  4. Always use `--no-deps` when installing the compiled wheel to avoid pulling CPU-only dependencies
 
 ## Summary
 

@@ -1,0 +1,27 @@
+version: '2.3'
+
+services:
+  katzenschreck:
+    build:
+      context: .
+      dockerfile: Dockerfile.jetson.source
+    container_name: katzenschreck-source
+    restart: unless-stopped
+    
+    # GPU support for Jetson (version 2.3 syntax)
+    runtime: nvidia
+    
+    # Environment variables
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+    
+    # Mount config and results
+    volumes:
+      - ./config.txt:/katzenschreck/config.txt:ro
+      - ./results:/katzenschreck/results
+    
+    # Network mode for RTSP streams
+    network_mode: host
+
