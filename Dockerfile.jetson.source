@@ -94,7 +94,8 @@ ARG CUDA_SOURCE_PATH=""
 RUN mkdir -p /tmp/cuda_temp
 
 # Versuche CUDA-Verzeichnis zu kopieren (schlägt fehl, wenn nicht vorhanden - das ist OK)
-COPY docker_cuda_temp /tmp/cuda_temp_docker 2>/dev/null || true
+# COPY ist ein Docker-Befehl, keine Shell-Redirektion möglich
+COPY docker_cuda_temp /tmp/cuda_temp_docker
 
 # Verschiebe kopierte CUDA-Dateien an den Zielort
 RUN if [ -d "/tmp/cuda_temp_docker/bin" ] && [ -f "/tmp/cuda_temp_docker/bin/nvcc" ]; then \
