@@ -43,15 +43,50 @@ else
     # Erstelle temporäres CUDA-Verzeichnis im Build-Context
     # Verwende einen Namen ohne Punkt am Anfang, damit .dockerignore es nicht ignoriert
     CUDA_TMP_DIR="./docker_cuda_temp"
+    
+    # Lösche altes Verzeichnis falls vorhanden
+    rm -rf "$CUDA_TMP_DIR"
     mkdir -p "$CUDA_TMP_DIR"
     
     # Kopiere nur notwendige CUDA-Bibliotheken (bin, lib64, include)
     echo "📦 Copying CUDA binaries..."
-    cp -r "$CUDA_PATH/bin" "$CUDA_TMP_DIR/" 2>/dev/null || true
+    if [ -d "$CUDA_PATH/bin" ]; then
+        cp -r "$CUDA_PATH/bin" "$CUDA_TMP_DIR/" && echo "  ✅ bin copied"
+    else
+        echo "  ❌ ERROR: $CUDA_PATH/bin not found!"
+        exit 1
+    fi
+    
     echo "📦 Copying CUDA libraries..."
-    cp -r "$CUDA_PATH/lib64" "$CUDA_TMP_DIR/" 2>/dev/null || true
+    if [ -d "$CUDA_PATH/lib64" ]; then
+        cp -r "$CUDA_PATH/lib64" "$CUDA_TMP_DIR/" && echo "  ✅ lib64 copied"
+    else
+        echo "  ⚠️  WARNING: $CUDA_PATH/lib64 not found (may be symlink)"
+        # Versuche Symlink zu kopieren
+        if [ -L "$CUDA_PATH/lib64" ]; then
+            cp -rL "$CUDA_PATH/lib64" "$CUDA_TMP_DIR/" 2>/dev/null || true
+        fi
+    fi
+    
     echo "📦 Copying CUDA headers..."
-    cp -r "$CUDA_PATH/include" "$CUDA_TMP_DIR/" 2>/dev/null || true
+    if [ -d "$CUDA_PATH/include" ]; then
+        cp -r "$CUDA_PATH/include" "$CUDA_TMP_DIR/" && echo "  ✅ include copied"
+    else
+        echo "  ⚠️  WARNING: $CUDA_PATH/include not found (may be symlink)"
+        # Versuche Symlink zu kopieren
+        if [ -L "$CUDA_PATH/include" ]; then
+            cp -rL "$CUDA_PATH/include" "$CUDA_TMP_DIR/" 2>/dev/null || true
+        fi
+    fi
+    
+    # Prüfe ob nvcc kopiert wurde
+    if [ ! -f "$CUDA_TMP_DIR/bin/nvcc" ]; then
+        echo "❌ ERROR: nvcc not found in $CUDA_TMP_DIR/bin after copy!"
+        exit 1
+    fi
+    
+    echo "✅ CUDA files copied successfully to $CUDA_TMP_DIR"
+    ls -lh "$CUDA_TMP_DIR/bin/nvcc"
     
     # Speichere CUDA-Pfad für Dockerfile
     echo "$CUDA_PATH" > "$CUDA_TMP_DIR/cuda_path.txt"
