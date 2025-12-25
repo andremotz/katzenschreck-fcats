@@ -70,6 +70,10 @@ INSTALL_MARKER="${VENV_DIR}/.requirements_installed_${REQUIREMENTS_FILE}"
 if [ ! -f "$INSTALL_MARKER" ] || [ "$REQUIREMENTS_FILE" -nt "$INSTALL_MARKER" ]; then
     echo "📦 Installing/updating requirements from $REQUIREMENTS_FILE..."
     
+    # Install NumPy < 2.0 first to fix OpenCV compatibility
+    echo "📦 Installing compatible NumPy version (< 2.0) for OpenCV..."
+    pip install "numpy<2.0" || true
+    
     # Install PyTorch based on platform
     if [[ $REQUIREMENTS_FILE == *"jetson"* ]]; then
         echo "🔥 Installing PyTorch with CUDA support for Jetson..."
@@ -103,6 +107,13 @@ if not os.path.exists(model_path):
 else:
     print('Model already exists.')
 "
+
+# Check if --setup-only flag is set
+if [ "$1" = "--setup-only" ]; then
+    echo "✅ Setup complete! (--setup-only flag detected, skipping Python start)"
+    deactivate
+    exit 0
+fi
 
 # Run the Python script with global variables RTSP_STREAM_URL and OUTPUT_DIR
 echo "🚀 Starting Katzenschreck detection system..."
