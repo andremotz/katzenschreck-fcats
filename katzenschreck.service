@@ -7,7 +7,7 @@ Wants=network.target
 [Service]
 Type=simple
 WorkingDirectory=PROJECT_DIR_PLACEHOLDER
-ExecStart=PROJECT_DIR_PLACEHOLDER/cat_detector/venv/bin/python -m cat_detector.main PROJECT_DIR_PLACEHOLDER/cat_detector/results
+ExecStart=PROJECT_DIR_PLACEHOLDER/run_katzenschreck.sh
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
 RestartSec=10
