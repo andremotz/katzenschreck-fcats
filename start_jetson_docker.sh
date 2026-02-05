@@ -3,7 +3,7 @@
 
 # Build the Docker image
 # Set GIT_BRANCH environment variable to use a specific branch (default: main)
-GIT_BRANCH=${GIT_BRANCH:-dev/realtime-monitoring}
+GIT_BRANCH=${GIT_BRANCH:-main}
 echo "🔨 Building Jetson Docker image from branch: ${GIT_BRANCH}..."
 docker build -f Dockerfile.jetson \
     --build-arg GIT_BRANCH=${GIT_BRANCH} \
