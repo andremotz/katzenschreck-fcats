@@ -2,6 +2,10 @@
 
 # Usage: ./start_jetson_docker.sh [config.txt]
 # If no config file is specified, defaults to ./config.txt
+# Environment variables:
+#   NETWORK_MODE=host|bridge (default: host)
+#   - host: Use host network (RTSP streams work directly, no port visibility)
+#   - bridge: Use bridge network (ports visible in docker ps, requires RTSP IP config)
 
 # Get config file path from argument or use default
 CONFIG_FILE=${1:-./config.txt}
@@ -25,6 +29,9 @@ fi
 # Read monitoring_port from config file (default: 8080)
 MONITORING_PORT=$(grep -E "^monitoring_port=" "$CONFIG_FILE" | cut -d'=' -f2 | tr -d '[:space:]' || echo "8080")
 
+# Network mode (default: host for RTSP compatibility)
+NETWORK_MODE=${NETWORK_MODE:-host}
+
 # Set container name based on camera_name
 CONTAINER_NAME="katzenschreck-${CAMERA_NAME}"
 RESULTS_DIR="./results_${CAMERA_NAME}"
@@ -35,6 +42,7 @@ echo "   Camera name: $CAMERA_NAME"
 echo "   Container name: $CONTAINER_NAME"
 echo "   Results directory: $RESULTS_DIR"
 echo "   Monitoring port: $MONITORING_PORT"
+echo "   Network mode: $NETWORK_MODE"
 echo ""
 
 echo "🔍 Checking GPU/CUDA availability..."
@@ -73,6 +81,16 @@ mkdir -p "$RESULTS_DIR"
 
 # Run the Docker container with GPU support
 echo "🚀 Starting Katzenschreck container: $CONTAINER_NAME..."
+
+# Build network arguments based on mode
+if [ "$NETWORK_MODE" = "bridge" ]; then
+    NETWORK_ARGS="-p ${MONITORING_PORT}:${MONITORING_PORT}"
+    echo "   Using bridge network with port mapping: ${MONITORING_PORT}:${MONITORING_PORT}"
+else
+    NETWORK_ARGS="--network host"
+    echo "   Using host network (ports accessible directly on host)"
+fi
+
 docker run -d \
     --name "$CONTAINER_NAME" \
     --gpus all \
@@ -83,10 +101,11 @@ docker run -d \
     -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,max_split_size_mb:256,garbage_collection_threshold:0.6 \
     -v "$(realpath "$CONFIG_FILE"):/katzenschreck/config.txt:ro" \
     -v "$(realpath "$RESULTS_DIR"):/katzenschreck/results" \
-    --network host \
+    $NETWORK_ARGS \
     --shm-size=512m \
     --label "katzenschreck.monitoring.port=$MONITORING_PORT" \
     --label "katzenschreck.camera.name=$CAMERA_NAME" \
+    --label "katzenschreck.network.mode=$NETWORK_MODE" \
     katzenschreck-jetson
 
 echo ""

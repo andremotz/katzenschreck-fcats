@@ -3,9 +3,9 @@
 # Show all katzenschreck containers with their monitoring ports and health status
 
 echo "🐱 Katzenschreck Containers"
-echo "═══════════════════════════════════════════════════════════════════════════"
-printf "%-30s %-15s %-15s %-20s\n" "CONTAINER" "CAMERA" "PORT" "HEALTH"
-echo "───────────────────────────────────────────────────────────────────────────"
+echo "═════════════════════════════════════════════════════════════════════════════════════"
+printf "%-30s %-15s %-10s %-10s %-20s\n" "CONTAINER" "CAMERA" "PORT" "NETWORK" "HEALTH"
+echo "─────────────────────────────────────────────────────────────────────────────────────"
 
 # Get all katzenschreck containers
 CONTAINERS=$(docker ps -a --filter "name=katzenschreck" --format "{{.Names}}")
@@ -21,6 +21,13 @@ for CONTAINER in $CONTAINERS; do
     
     # Get monitoring port from label
     PORT=$(docker inspect --format='{{index .Config.Labels "katzenschreck.monitoring.port"}}' "$CONTAINER" 2>/dev/null || echo "N/A")
+    
+    # Get network mode from label or inspect
+    NETWORK=$(docker inspect --format='{{index .Config.Labels "katzenschreck.network.mode"}}' "$CONTAINER" 2>/dev/null || echo "")
+    if [ -z "$NETWORK" ] || [ "$NETWORK" = "<no value>" ]; then
+        # Fallback: check actual network mode
+        NETWORK=$(docker inspect --format='{{range $net, $conf := .NetworkSettings.Networks}}{{$net}}{{end}}' "$CONTAINER" 2>/dev/null || echo "N/A")
+    fi
     
     # Get health status
     HEALTH=$(docker inspect --format='{{.State.Health.Status}}' "$CONTAINER" 2>/dev/null || echo "no healthcheck")
@@ -49,10 +56,10 @@ for CONTAINER in $CONTAINERS; do
         CONTAINER="$CONTAINER ($STATUS)"
     fi
     
-    printf "%-30s %-15s %-15s %-20s\n" "$CONTAINER" "$CAMERA" "$PORT" "$HEALTH_COLOR"
+    printf "%-30s %-15s %-10s %-10s %-20s\n" "$CONTAINER" "$CAMERA" "$PORT" "$NETWORK" "$HEALTH_COLOR"
 done
 
-echo "═══════════════════════════════════════════════════════════════════════════"
+echo "═════════════════════════════════════════════════════════════════════════════════════"
 echo ""
 echo "💡 Quick access:"
 
