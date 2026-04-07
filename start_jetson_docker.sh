@@ -33,6 +33,24 @@ echo "   Container name: $CONTAINER_NAME"
 echo "   Results directory: $RESULTS_DIR"
 echo ""
 
+echo "🔍 Checking GPU/CUDA availability..."
+if command -v nvidia-smi &> /dev/null; then
+    echo "✅ nvidia-smi found on host"
+else
+    echo "⚠️  WARNING: nvidia-smi not found on host"
+    echo "   GPU acceleration may not work properly"
+fi
+
+# Check if nvidia-container-runtime is available
+if docker info 2>/dev/null | grep -q "nvidia"; then
+    echo "✅ NVIDIA Container Runtime detected"
+else
+    echo "⚠️  WARNING: NVIDIA Container Runtime not detected in Docker"
+    echo "   Install with: sudo apt-get install nvidia-container-runtime"
+    echo "   Continuing anyway..."
+fi
+echo ""
+
 # Build the Docker image
 # Set GIT_BRANCH environment variable to use a specific branch (default: main)
 GIT_BRANCH=${GIT_BRANCH:-main}
@@ -49,21 +67,57 @@ docker rm "$CONTAINER_NAME" 2>/dev/null || true
 # Create results directory if it doesn't exist
 mkdir -p "$RESULTS_DIR"
 
-# Run the Docker container
+# Run the Docker container with GPU support
 echo "🚀 Starting Katzenschreck container: $CONTAINER_NAME..."
 docker run -d \
     --name "$CONTAINER_NAME" \
-    --runtime nvidia \
+    --gpus all \
     --restart unless-stopped \
     -e NVIDIA_VISIBLE_DEVICES=all \
     -e NVIDIA_DRIVER_CAPABILITIES=all \
-    -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+    -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,max_split_size_mb:256,garbage_collection_threshold:0.6 \
     -v "$(realpath "$CONFIG_FILE"):/katzenschreck/config.txt:ro" \
     -v "$(realpath "$RESULTS_DIR"):/katzenschreck/results" \
     --network host \
+    --shm-size=512m \
     katzenschreck-jetson
 
 echo ""
 echo "✅ Container started successfully!"
+echo ""
+echo "🔍 Validating GPU access in container..."
+sleep 3
+
+# Check GPU availability inside container
+GPU_CHECK=$(docker exec "$CONTAINER_NAME" python3 -c "
+import torch
+if torch.cuda.is_available():
+    print('GPU_OK')
+    print(f'Device: {torch.cuda.get_device_name(0)}')
+    print(f'CUDA Version: {torch.version.cuda}')
+    props = torch.cuda.get_device_properties(0)
+    print(f'Compute Capability: {props.major}.{props.minor}')
+else:
+    print('GPU_FAIL')
+" 2>&1)
+
+if echo "$GPU_CHECK" | grep -q "GPU_OK"; then
+    echo "✅ GPU is ACCESSIBLE inside container!"
+    echo "$GPU_CHECK" | grep -E "(Device|CUDA|Compute)" | sed 's/^/   /'
+    echo ""
+    echo "🎯 Expected performance: ~0.3-0.5s per frame detection"
+else
+    echo "❌ WARNING: GPU NOT accessible inside container!"
+    echo "   The application will run on CPU (very slow: ~20-25s per frame)"
+    echo "   Common causes:"
+    echo "   - nvidia-container-runtime not installed"
+    echo "   - Docker not restarted after nvidia-runtime installation"
+    echo "   - Incompatible base image"
+    echo ""
+    echo "   Continuing anyway (application will work but slow)..."
+fi
+
+echo ""
 echo "📊 View logs with: docker logs -f $CONTAINER_NAME"
+echo "🎯 Monitor GPU usage: watch -n 1 tegrastats"
 echo "🛑 Stop with: docker stop $CONTAINER_NAME"

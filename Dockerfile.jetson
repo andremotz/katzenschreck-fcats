@@ -1,7 +1,7 @@
 # Dockerfile for Katzenschreck on NVIDIA Jetson
-# Based on ultralytics/ultralytics with additional dependencies
+# Based on ultralytics/ultralytics with JetPack 6 support (Ubuntu 22.04, GLIBC 2.35)
 
-FROM ultralytics/ultralytics:latest-jetson-jetpack5
+FROM ultralytics/ultralytics:latest-jetson-jetpack6
 
 # Set working directory
 WORKDIR /katzenschreck
@@ -64,6 +64,19 @@ RUN python3 -c "from ultralytics import YOLO; YOLO('yolo11x.pt')"
 
 # Set environment variable for hardware type
 ENV PYTHONUNBUFFERED=1
+
+# GPU optimization environment variables for Jetson Orin Nano with JetPack 6
+# Conservative settings for 4-8GB shared memory
+ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,max_split_size_mb:256,garbage_collection_threshold:0.6
+
+# GPU verification during build (will show warning if no GPU access, that's expected)
+RUN python3 -c "\
+import torch; \
+print('='*60); \
+print('PyTorch Version:', torch.__version__); \
+print('CUDA Compiled:', torch.version.cuda if hasattr(torch.version, 'cuda') else 'N/A'); \
+print('CUDA Available:', torch.cuda.is_available()); \
+print('='*60)" 2>&1 || echo "⚠️ GPU check skipped (expected during build without --gpus flag)"
 
 # Default command (can be overridden)
 CMD ["python3", "-m", "cat_detector.main", "/katzenschreck/results"]
