@@ -22,6 +22,9 @@ if [ -z "$CAMERA_NAME" ]; then
     CAMERA_NAME="katzenschreck"
 fi
 
+# Read monitoring_port from config file (default: 8080)
+MONITORING_PORT=$(grep -E "^monitoring_port=" "$CONFIG_FILE" | cut -d'=' -f2 | tr -d '[:space:]' || echo "8080")
+
 # Set container name based on camera_name
 CONTAINER_NAME="katzenschreck-${CAMERA_NAME}"
 RESULTS_DIR="./results_${CAMERA_NAME}"
@@ -31,6 +34,7 @@ echo "   Config file: $CONFIG_FILE"
 echo "   Camera name: $CAMERA_NAME"
 echo "   Container name: $CONTAINER_NAME"
 echo "   Results directory: $RESULTS_DIR"
+echo "   Monitoring port: $MONITORING_PORT"
 echo ""
 
 echo "🔍 Checking GPU/CUDA availability..."
@@ -75,11 +79,14 @@ docker run -d \
     --restart unless-stopped \
     -e NVIDIA_VISIBLE_DEVICES=all \
     -e NVIDIA_DRIVER_CAPABILITIES=all \
+    -e MONITORING_PORT="$MONITORING_PORT" \
     -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,max_split_size_mb:256,garbage_collection_threshold:0.6 \
     -v "$(realpath "$CONFIG_FILE"):/katzenschreck/config.txt:ro" \
     -v "$(realpath "$RESULTS_DIR"):/katzenschreck/results" \
     --network host \
     --shm-size=512m \
+    --label "katzenschreck.monitoring.port=$MONITORING_PORT" \
+    --label "katzenschreck.camera.name=$CAMERA_NAME" \
     katzenschreck-jetson
 
 echo ""
@@ -120,4 +127,7 @@ fi
 echo ""
 echo "📊 View logs with: docker logs -f $CONTAINER_NAME"
 echo "🎯 Monitor GPU usage: watch -n 1 tegrastats"
+echo "🌐 Monitoring dashboard: http://localhost:$MONITORING_PORT"
+echo "📈 API Status: curl http://localhost:$MONITORING_PORT/api/status"
+echo "❤️  Health check: docker inspect --format='{{.State.Health.Status}}' $CONTAINER_NAME"
 echo "🛑 Stop with: docker stop $CONTAINER_NAME"

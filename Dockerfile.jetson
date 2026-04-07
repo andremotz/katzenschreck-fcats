@@ -62,6 +62,10 @@ RUN mkdir -p /katzenschreck/results
 # Pre-download YOLO11x model for Jetson
 RUN python3 -c "from ultralytics import YOLO; YOLO('yolo11x.pt')"
 
+# Expose monitoring port (default: 8080, configurable via config.txt)
+# Note: Port mapping only applies when not using --network host
+EXPOSE 8080
+
 # Set environment variable for hardware type
 ENV PYTHONUNBUFFERED=1
 
@@ -77,6 +81,11 @@ print('PyTorch Version:', torch.__version__); \
 print('CUDA Compiled:', torch.version.cuda if hasattr(torch.version, 'cuda') else 'N/A'); \
 print('CUDA Available:', torch.cuda.is_available()); \
 print('='*60)" 2>&1 || echo "⚠️ GPU check skipped (expected during build without --gpus flag)"
+
+# Healthcheck: Monitor application health via monitoring API
+# Checks every 30s, timeout after 10s, 3 retries before unhealthy
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python3 -c "import urllib.request, json, sys, os; port = os.environ.get('MONITORING_PORT', '8080'); response = urllib.request.urlopen(f'http://localhost:{port}/api/status', timeout=5); data = json.loads(response.read()); sys.exit(0 if data.get('is_streaming', False) else 1)" || exit 1
 
 # Default command (can be overridden)
 CMD ["python3", "-m", "cat_detector.main", "/katzenschreck/results"]
