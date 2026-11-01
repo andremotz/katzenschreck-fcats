@@ -21,6 +21,7 @@ What the system must do lives in `openspec/specs/`. ADRs record *why* it is buil
 | [0011](0011-agpl-license.md) | AGPL-3.0 license | Accepted |
 | [0012](0012-remove-database-archive.md) | Remove the database archive | Accepted, supersedes 0009 |
 | [0013](0013-heartbeat-tied-to-detection.md) | Tie the heartbeat and health check to detection progress | Accepted |
+| [0014](0014-sprinkler-threshold-in-home-assistant.md) | The sprinkler decision threshold lives in Home Assistant | Accepted |
 
 ## Template
 

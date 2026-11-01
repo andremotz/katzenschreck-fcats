@@ -5,3 +5,6 @@ config.txt
 .env
 .env.*
 !.env.example
+
+# Local agent notes (contain internal hosts and entity ids; repo is public)
+AGENTS.md
