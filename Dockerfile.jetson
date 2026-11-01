@@ -75,9 +75,10 @@ print('CUDA Available:', torch.cuda.is_available()); \
 print('='*60)" 2>&1 || echo "⚠️ GPU check skipped (expected during build without --gpus flag)"
 
 # Healthcheck: Monitor application health via monitoring API
+# Healthy only while streaming and a frame completed detection recently (processing_alive)
 # Checks every 30s, timeout after 10s, 3 retries before unhealthy
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python3 -c "import urllib.request, json, sys, os; port = os.environ.get('MONITORING_PORT', '8080'); response = urllib.request.urlopen(f'http://localhost:{port}/api/status', timeout=5); data = json.loads(response.read()); sys.exit(0 if data.get('is_streaming', False) else 1)" || exit 1
+    CMD python3 -c "import urllib.request, json, sys, os; port = os.environ.get('MONITORING_PORT', '8080'); response = urllib.request.urlopen(f'http://localhost:{port}/api/status', timeout=5); data = json.loads(response.read()); sys.exit(0 if data.get('is_streaming', False) and data.get('processing_alive', False) else 1)" || exit 1
 
 # Record which commit the image was built from (set by start_jetson_docker.sh)
 ARG GIT_COMMIT=unknown

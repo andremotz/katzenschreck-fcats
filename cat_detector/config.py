@@ -32,6 +32,10 @@ class Config:  # pylint: disable=too-few-public-methods,too-many-instance-attrib
             self.rtsp_connection_mode = 'continuous'  # Default to continuous
         # Frames older than this (seconds) are skipped and trigger a stream reconnect
         self.max_frame_age = float(config.get('max_frame_age', 10.0))
+        # Heartbeat pings and the health check require a frame processed within this many seconds
+        self.liveness_timeout = float(config.get('liveness_timeout', 60.0))
+        # The process exits (and the container restarts) if the main loop makes no progress this long
+        self.watchdog_timeout = float(config.get('watchdog_timeout', 120.0))
         self.mqtt_broker_url = config.get('mqtt_broker_url')
         self.mqtt_broker_port = int(config.get('mqtt_broker_port', 1883))
         self.mqtt_topic = config.get('mqtt_topic')

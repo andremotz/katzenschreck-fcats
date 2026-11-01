@@ -20,6 +20,7 @@ What the system must do lives in `openspec/specs/`. ADRs record *why* it is buil
 | [0010](0010-key-value-config-file.md) | Single key=value config file, mounted at runtime | Accepted |
 | [0011](0011-agpl-license.md) | AGPL-3.0 license | Accepted |
 | [0012](0012-remove-database-archive.md) | Remove the database archive | Accepted, supersedes 0009 |
+| [0013](0013-heartbeat-tied-to-detection.md) | Tie the heartbeat and health check to detection progress | Accepted |
 
 ## Template
 

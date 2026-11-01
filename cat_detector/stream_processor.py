@@ -29,7 +29,11 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
         # Use configured model if available, otherwise auto-detect
         model_path = config.yolo_model if config.yolo_model else None
         self.detector = ObjectDetector(model_path=model_path, hardware_type=config.hardware_type)
-        self.mqtt_handler = MQTTHandler(config)
+
+        # Liveness: last frame that completed detection, last main loop iteration
+        self._last_processed_time = 0.0
+        self._last_loop_time = time.time()
+        self.mqtt_handler = MQTTHandler(config, is_alive=self.is_processing_alive)
 
         # Performance monitoring
         self.processing_times = []  # Track last N processing times
@@ -48,7 +52,8 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
         self.monitoring_collector = None
         self.monitoring_server = None
         if config.monitoring_enabled:
-            self.monitoring_collector = MonitoringCollector()
+            self.monitoring_collector = MonitoringCollector(
+                liveness_timeout=config.liveness_timeout)
             self.monitoring_server = MonitoringServer(self.monitoring_collector, config.monitoring_port)
             self.monitoring_server.start()
             print(f"✅ Monitoring enabled on port {config.monitoring_port}")
@@ -59,6 +64,25 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
         # Create output directory
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
+
+    def is_processing_alive(self) -> bool:
+        """True if a frame completed detection within liveness_timeout"""
+        return (self._last_processed_time > 0 and
+                time.time() - self._last_processed_time <= self.config.liveness_timeout)
+
+    def _start_watchdog(self):
+        """Exits the process if the main loop stops making progress, so the container restarts"""
+        def watch():
+            while True:
+                time.sleep(10)
+                stalled = time.time() - self._last_loop_time
+                if stalled > self.config.watchdog_timeout:
+                    print(f"💀 Watchdog: main loop stalled for {stalled:.0f}s "
+                          f"(limit {self.config.watchdog_timeout:.0f}s) - exiting for restart",
+                          flush=True)
+                    os._exit(1)
+
+        threading.Thread(target=watch, daemon=True).start()
 
     def _start_background_workers(self):
         """Starts background worker threads for non-blocking operations"""
@@ -223,6 +247,9 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
         if self.monitoring_collector:
             self.monitoring_collector.set_streaming_status(True)
         
+        self._last_loop_time = time.time()
+        self._start_watchdog()
+
         consecutive_no_frame_count = 0
         max_consecutive_no_frame = 30  # Allow up to 30 attempts without frame before warning
         
@@ -230,6 +257,7 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
         while True:
             # Start timing for performance monitoring
             frame_start_time = time.time()
+            self._last_loop_time = frame_start_time
             timing_breakdown = {
                 'frame_read': 0.0,
                 'resize': 0.0,
@@ -332,6 +360,9 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
             detections, results = self.detector.detect_objects(frame)
             detection_time = time.time() - detection_start
             timing_breakdown['detection'] = detection_time
+            self._last_processed_time = time.time()
+            if self.monitoring_collector:
+                self.monitoring_collector.set_last_processed_time(self._last_processed_time)
 
             # Debug: Print all detections before filtering
             if detections:

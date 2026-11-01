@@ -3,6 +3,7 @@
 import time
 import json
 import threading
+from typing import Callable, Optional
 import paho.mqtt.client as mqtt
 import sys
 import os
@@ -16,11 +17,13 @@ from cat_detector.config import Config
 class MQTTHandler:  # pylint: disable=too-few-public-methods
     """MQTT handler for communication with MQTT broker with auto-reconnect"""
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, is_alive: Optional[Callable[[], bool]] = None):
         self.config = config
         self.client = None
         self.connected = False
         self.ping_thread = None
+        # Heartbeats are only sent while this returns True (detection is actually running)
+        self.is_alive = is_alive or (lambda: True)
         self._setup_client()
         self._start_connection()
         self._start_ping_thread()
@@ -76,10 +79,18 @@ class MQTTHandler:  # pylint: disable=too-few-public-methods
         self.ping_thread.start()
 
     def _mqtt_ping(self):
-        """Sends a ping to the MQTT broker every 30 seconds"""
+        """Sends a ping to the MQTT broker every 30 seconds while detection is running"""
+        was_alive = True
         while True:
             time.sleep(30)
-            if self.connected:
+            alive = self.is_alive()
+            if alive != was_alive:
+                if alive:
+                    print("✅ MQTT: Detection running again, resuming heartbeat pings")
+                else:
+                    print("⚠️  MQTT: No frame processed recently, suspending heartbeat pings")
+                was_alive = alive
+            if self.connected and alive:
                 try:
                     extended_topic = f'{self.config.mqtt_topic}/ping'
                     current_timestamp = int(time.time())

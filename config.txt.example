@@ -5,6 +5,11 @@
 rtsp_stream_url=rtsp://username:password@ip:port/path
 # Frames older than this many seconds are skipped and the stream is reconnected (default: 10)
 # max_frame_age=10
+# Heartbeat pings (MQTT {mqtt_topic}/ping) and the health check require a frame processed
+# within this many seconds (default: 60)
+# liveness_timeout=60
+# Exit (container restarts) if the processing loop makes no progress this many seconds (default: 120)
+# watchdog_timeout=120
 
 # MQTT Broker Configuration  
 mqtt_broker_url=<your-mqtt-broker.com>

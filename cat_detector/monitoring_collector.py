@@ -11,13 +11,17 @@ from collections import deque
 class MonitoringCollector:
     """Thread-safe collector for monitoring metrics and frame data"""
 
-    def __init__(self, max_history: int = 100):
+    def __init__(self, max_history: int = 100, liveness_timeout: float = 60.0):
         """Initialize the monitoring collector
         
         Args:
             max_history: Maximum number of historical entries to keep
+            liveness_timeout: Seconds since the last processed frame after which
+                processing is reported as not alive
         """
         self._lock = threading.Lock()
+        self.liveness_timeout = liveness_timeout
+        self._last_processed_time = 0.0
         self.max_history = max_history
         
         # Current frame (JPEG encoded)
@@ -199,6 +203,11 @@ class MonitoringCollector:
         with self._lock:
             self._is_streaming = is_streaming
 
+    def set_last_processed_time(self, processed_time: float):
+        """Record when a frame last completed detection"""
+        with self._lock:
+            self._last_processed_time = processed_time
+
     def increment_frames_skipped(self, count: int = 1):
         """Increment the count of skipped frames
         
@@ -312,9 +321,16 @@ class MonitoringCollector:
             Dictionary with system status
         """
         with self._lock:
+            now = time.time()
+            since_processed = (now - self._last_processed_time
+                               if self._last_processed_time else None)
             return {
                 'is_streaming': self._is_streaming,
-                'uptime': time.time() - self._start_time,
+                'processing_alive': (since_processed is not None
+                                     and since_processed <= self.liveness_timeout),
+                'last_processed_time': self._last_processed_time,
+                'seconds_since_processed': since_processed,
+                'uptime': now - self._start_time,
                 'total_frames_processed': self._total_frames_processed,
                 'frames_skipped': self._frames_skipped,
                 'last_frame_time': self._last_frame_time,
