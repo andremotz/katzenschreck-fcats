@@ -3,6 +3,8 @@
 
 # RTSP Stream Configuration
 rtsp_stream_url=rtsp://username:password@ip:port/path
+# Frames older than this many seconds are skipped and the stream is reconnected (default: 10)
+# max_frame_age=10
 
 # MQTT Broker Configuration  
 mqtt_broker_url=<your-mqtt-broker.com>

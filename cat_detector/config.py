@@ -30,6 +30,8 @@ class Config:  # pylint: disable=too-few-public-methods,too-many-instance-attrib
         self.rtsp_connection_mode = config.get('rtsp_connection_mode', 'continuous').lower()
         if self.rtsp_connection_mode not in ['continuous', 'reconnect_per_frame']:
             self.rtsp_connection_mode = 'continuous'  # Default to continuous
+        # Frames older than this (seconds) are skipped and trigger a stream reconnect
+        self.max_frame_age = float(config.get('max_frame_age', 10.0))
         self.mqtt_broker_url = config.get('mqtt_broker_url')
         self.mqtt_broker_port = int(config.get('mqtt_broker_port', 1883))
         self.mqtt_topic = config.get('mqtt_topic')

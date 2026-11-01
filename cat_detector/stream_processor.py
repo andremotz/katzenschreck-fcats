@@ -374,6 +374,16 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
             if frame_age > 2.0:
                 print(f"⚠️  Old frame detected: {frame_age:.2f}s old (Frame #{frame_number}, Mode: {self.config.rtsp_connection_mode})")
             
+            # Never run detection on a stale frame: the cat is long gone and the
+            # sprinkler would be triggered over and over by the same old image
+            if frame_age > self.config.max_frame_age:
+                print(f"❌ Frame is {frame_age:.1f}s old (limit {self.config.max_frame_age:.1f}s) - "
+                      f"skipping and requesting stream reconnect")
+                if self.config.rtsp_connection_mode == 'continuous':
+                    self.stream_reader.request_reconnect()
+                time.sleep(1.0)
+                continue
+            
             # Update monitoring with frame age and reconnection time
             if self.monitoring_collector:
                 self.monitoring_collector.update_frame_age(frame_age)

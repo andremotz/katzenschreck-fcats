@@ -41,6 +41,7 @@ class RTSPStreamReader:
         # Control flags
         self._stopped = False
         self._connected = False
+        self._reconnect_requested = threading.Event()
         self._cap: Optional[cv2.VideoCapture] = None
         
         # Statistics
@@ -122,6 +123,7 @@ class RTSPStreamReader:
                 
                 print(f"✅ RTSP Reader: Connected to stream (transport: {self.transport})")
                 self._connected = True
+                self._reconnect_requested.clear()
                 retry_delay = 2  # Reset retry delay on success
                 
                 # Continuously read frames
@@ -129,6 +131,10 @@ class RTSPStreamReader:
                 max_failures = 10
                 
                 while not self._stopped and self._cap.isOpened():
+                    if self._reconnect_requested.is_set():
+                        print("🔄 RTSP Reader: Reconnect requested (stale frames), reconnecting...")
+                        break
+                    
                     # Use grab() first - it's faster (no decoding)
                     if not self._cap.grab():
                         consecutive_failures += 1
@@ -280,6 +286,19 @@ class RTSPStreamReader:
             if self._frame is None or self._frame_timestamp == 0:
                 return -1.0
             return time.time() - self._frame_timestamp
+
+    def request_reconnect(self):
+        """Ask the reader thread to drop and re-open the stream (continuous mode only)
+
+        Only sets a flag and discards the stale frame; the capture object itself is
+        released by the reader thread to avoid touching it from another thread.
+        """
+        if self.mode != 'continuous' or self._reconnect_requested.is_set():
+            return
+        self._reconnect_requested.set()
+        with self._lock:
+            self._frame = None
+            self._frame_timestamp = 0.0
 
     def is_connected(self) -> bool:
         """Check if the stream is currently connected"""
