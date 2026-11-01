@@ -23,12 +23,13 @@ env/
 *.swo
 *~
 
-# Results and logs
+# Results and logs (results_<camera>/ can hold 100k+ images)
 results/
+results_*/
 *.log
 
-# Config (will be mounted)
-# config.txt - now needed for Docker build
+# Config (mounted at runtime, contains credentials)
+config.txt
 
 # Documentation
 *.md

@@ -34,8 +34,12 @@ hardware_type=jetson
 ### 3. Build Docker Image
 
 ```bash
-docker build -f Dockerfile.jetson -t katzenschreck:jetson .
+DOCKER_BUILDKIT=1 docker build -f Dockerfile.jetson \
+  --build-arg GIT_COMMIT=$(git rev-parse --short HEAD) \
+  -t katzenschreck:jetson .
 ```
+
+The image contains the code from this directory (not a fresh clone), so check out the version you want before building. `start_jetson_docker.sh` does this check for you and tags the image with the commit.
 
 ## Usage
 

@@ -6,6 +6,8 @@
 #   NETWORK_MODE=host|bridge (default: host)
 #   - host: Use host network (RTSP streams work directly, no port visibility)
 #   - bridge: Use bridge network (ports visible in docker ps, requires RTSP IP config)
+#   ALLOW_DIRTY=1 (build even with uncommitted changes, tagged <commit>-dirty)
+# The image is built from the currently checked-out code and tagged with its commit.
 
 # Get config file path from argument or use default
 CONFIG_FILE=${1:-./config.txt}
@@ -63,13 +65,36 @@ else
 fi
 echo ""
 
-# Build the Docker image
-# Set GIT_BRANCH environment variable to use a specific branch (default: main)
-GIT_BRANCH=${GIT_BRANCH:-main}
-echo "🔨 Building Jetson Docker image from branch: ${GIT_BRANCH}..."
-docker build -f Dockerfile.jetson \
-    --build-arg GIT_BRANCH=${GIT_BRANCH} \
-    -t katzenschreck-jetson .
+# Build the Docker image from the checked-out code in this directory.
+# Select the version with git first, e.g.: git fetch && git checkout <branch-or-commit>
+# Set ALLOW_DIRTY=1 to build with uncommitted changes (e.g. for quick tests).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if ! git -C "$SCRIPT_DIR" rev-parse --git-dir > /dev/null 2>&1; then
+    echo "❌ Error: $SCRIPT_DIR is not a git repository"
+    exit 1
+fi
+
+GIT_COMMIT=$(git -C "$SCRIPT_DIR" rev-parse --short HEAD)
+GIT_BRANCH=$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD)
+if [ -n "$(git -C "$SCRIPT_DIR" status --porcelain --untracked-files=no)" ]; then
+    if [ "${ALLOW_DIRTY:-0}" = "1" ]; then
+        echo "⚠️  WARNING: Building with uncommitted changes (ALLOW_DIRTY=1)"
+        GIT_COMMIT="${GIT_COMMIT}-dirty"
+    else
+        echo "❌ Error: Uncommitted changes in $SCRIPT_DIR:"
+        git -C "$SCRIPT_DIR" status --short --untracked-files=no | sed 's/^/   /'
+        echo "   Commit or stash them, or set ALLOW_DIRTY=1 to build anyway."
+        exit 1
+    fi
+fi
+
+IMAGE_NAME="katzenschreck-jetson"
+echo "🔨 Building Jetson Docker image from ${GIT_BRANCH} @ ${GIT_COMMIT}..."
+DOCKER_BUILDKIT=1 docker build -f "$SCRIPT_DIR/Dockerfile.jetson" \
+    --build-arg GIT_COMMIT="${GIT_COMMIT}" \
+    -t "${IMAGE_NAME}:${GIT_COMMIT}" \
+    -t "${IMAGE_NAME}:latest" \
+    "$SCRIPT_DIR" || { echo "❌ Docker build failed"; exit 1; }
 
 # Stop and remove existing container if it exists
 echo "🛑 Stopping existing container: $CONTAINER_NAME..."
@@ -106,10 +131,11 @@ docker run -d \
     --label "katzenschreck.monitoring.port=$MONITORING_PORT" \
     --label "katzenschreck.camera.name=$CAMERA_NAME" \
     --label "katzenschreck.network.mode=$NETWORK_MODE" \
-    katzenschreck-jetson
+    --label "katzenschreck.git.commit=$GIT_COMMIT" \
+    "${IMAGE_NAME}:${GIT_COMMIT}"
 
 echo ""
-echo "✅ Container started successfully!"
+echo "✅ Container started successfully! (image ${IMAGE_NAME}:${GIT_COMMIT})"
 echo ""
 echo "🔍 Validating GPU access in container..."
 sleep 3
@@ -150,3 +176,5 @@ echo "🌐 Monitoring dashboard: http://localhost:$MONITORING_PORT"
 echo "📈 API Status: curl http://localhost:$MONITORING_PORT/api/status"
 echo "❤️  Health check: docker inspect --format='{{.State.Health.Status}}' $CONTAINER_NAME"
 echo "🛑 Stop with: docker stop $CONTAINER_NAME"
+echo "🏷️  Running commit: docker inspect -f '{{index .Config.Labels \"katzenschreck.git.commit\"}}' $CONTAINER_NAME"
+echo "⏪ Available versions: docker images $IMAGE_NAME"

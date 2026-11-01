@@ -196,14 +196,24 @@ docker run --rm --runtime nvidia ultralytics/ultralytics:latest-jetson nvidia-sm
 Build the Docker image:
 
 ```bash
-sudo ./start_jetson_docker.sh
+./start_jetson_docker.sh config.txt
 ```
+
+The image is built from the currently checked-out code in this directory and tagged with the Git commit (`katzenschreck-jetson:<commit>`). To deploy another version, check it out first:
+
+```bash
+git fetch
+git checkout <branch-or-commit>
+./start_jetson_docker.sh config.txt
+```
+
+The script refuses to build with uncommitted changes; set `ALLOW_DIRTY=1` to build anyway (tagged `<commit>-dirty`).
 
 Or manually:
 
 ```bash
-docker build -f Dockerfile.jetson \
-    --build-arg GIT_BRANCH=main \
+DOCKER_BUILDKIT=1 docker build -f Dockerfile.jetson \
+    --build-arg GIT_COMMIT=$(git rev-parse --short HEAD) \
     -t katzenschreck-jetson .
 ```
 

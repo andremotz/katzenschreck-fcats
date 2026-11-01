@@ -17,17 +17,12 @@ RUN apt-get update && apt-get install -y \
     libswresample3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Build argument for Git branch/tag (default: main)
-ARG GIT_BRANCH=main
-ARG GIT_REPO=https://github.com/andremotz/katzenschreck-fcats.git
-
-# Clone the repository with the specified branch
-RUN git clone --depth 1 --branch ${GIT_BRANCH} ${GIT_REPO} /tmp/katzenschreck || \
-    (git clone --depth 1 ${GIT_REPO} /tmp/katzenschreck && \
-     cd /tmp/katzenschreck && git checkout ${GIT_BRANCH})
+# Code is taken from the local build context (the checked-out repo), not cloned.
+# Use start_jetson_docker.sh to build: it checks for a clean working tree and
+# tags/labels the image with the Git commit.
 
 # Copy requirements file
-RUN cp /tmp/katzenschreck/cat_detector/requirements_jetson.txt /katzenschreck/requirements_jetson.txt
+COPY cat_detector/requirements_jetson.txt /katzenschreck/requirements_jetson.txt
 
 # Install Python dependencies
 # Note: PyTorch, ultralytics, and opencv are already included in the base image
@@ -44,23 +39,21 @@ RUN pip install --no-cache-dir \
     uvicorn[standard] \
     websockets
 
-# Copy application code
-RUN cp -r /tmp/katzenschreck/cat_detector/ /katzenschreck/cat_detector/
+# Pre-download YOLO11x model for Jetson (before copying code, so code changes don't re-download it)
+RUN python3 -c "from ultralytics import YOLO; YOLO('yolo11x.pt')"
 
-# Copy config file (will be overridden by volume mount, but needed for build)
-RUN cp /tmp/katzenschreck/config.txt /katzenschreck/config.txt || echo "# Config will be mounted" > /katzenschreck/config.txt
+# Placeholder config (the real config.txt is mounted at runtime and must not be baked into the image)
+RUN echo "# Config will be mounted" > /katzenschreck/config.txt
 
-# Copy trained models directory (if exists)
-RUN cp -r /tmp/katzenschreck/runs/ /katzenschreck/runs/ 2>/dev/null || mkdir -p /katzenschreck/runs/
-
-# Clean up cloned repository to save space
-RUN rm -rf /tmp/katzenschreck
+# Copy trained models directory (if it exists in the build context)
+RUN --mount=type=bind,source=.,target=/src \
+    (cp -r /src/runs/ /katzenschreck/runs/ 2>/dev/null || mkdir -p /katzenschreck/runs/)
 
 # Create results directory
 RUN mkdir -p /katzenschreck/results
 
-# Pre-download YOLO11x model for Jetson
-RUN python3 -c "from ultralytics import YOLO; YOLO('yolo11x.pt')"
+# Copy application code
+COPY cat_detector/ /katzenschreck/cat_detector/
 
 # Expose monitoring port (default: 8080, configurable via config.txt)
 # Note: Port mapping only applies when not using --network host
@@ -86,6 +79,12 @@ print('='*60)" 2>&1 || echo "⚠️ GPU check skipped (expected during build wit
 # Checks every 30s, timeout after 10s, 3 retries before unhealthy
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD python3 -c "import urllib.request, json, sys, os; port = os.environ.get('MONITORING_PORT', '8080'); response = urllib.request.urlopen(f'http://localhost:{port}/api/status', timeout=5); data = json.loads(response.read()); sys.exit(0 if data.get('is_streaming', False) else 1)" || exit 1
+
+# Record which commit the image was built from (set by start_jetson_docker.sh)
+ARG GIT_COMMIT=unknown
+LABEL org.opencontainers.image.revision=${GIT_COMMIT} \
+      org.opencontainers.image.source=https://github.com/andremotz/katzenschreck-fcats
+ENV KATZENSCHRECK_GIT_COMMIT=${GIT_COMMIT}
 
 # Default command (can be overridden)
 CMD ["python3", "-m", "cat_detector.main", "/katzenschreck/results"]
