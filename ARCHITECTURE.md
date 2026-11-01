@@ -3,10 +3,10 @@
 ## High-Level Overview
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   IP Camera     │    │  Katzenschreck  │    │   MariaDB       │    │  Schreckmonitor │
-│  (RTSP Stream)  │───▶│     System      │───▶│   Database      │───▶│   Desktop-App   │
-└─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   IP Camera     │    │  Katzenschreck  │    │  Results folder │
+│  (RTSP Stream)  │───▶│     System      │───▶│ (Detection JPGs)│
+└─────────────────┘    └─────────────────┘    └─────────────────┘
                               │
                               ▼
                        ┌─────────────────┐
@@ -37,14 +37,12 @@ graph TB
         subgraph "Processing Pipeline"
             Stream[stream_processor.py<br/>Main Processing Loop]
             Detector[object_detector.py<br/>YOLO Detection]
-            DB[database_handler.py<br/>Database Operations]
             MQTT[mqtt_handler.py<br/>MQTT Communication]
         end
     end
     
     %% Storage Layer
     subgraph "Data Storage"
-        MariaDB[(MariaDB Database<br/>Images & Metadata)]
         FileSystem[File System<br/>Detection Images]
     end
     
@@ -58,15 +56,12 @@ graph TB
     Main --> Stream
     
     Stream --> Detector
-    Stream --> DB
     Stream --> MQTT
     Stream --> FileSystem
     
     Config -.-> Stream
-    Config -.-> DB
     Config -.-> MQTT
     
-    DB --> MariaDB
     MQTT --> MQTTBroker
     MQTTBroker --> SmartHome
     
@@ -77,8 +72,8 @@ graph TB
     classDef external fill:#fff3e0
     
     class Camera input
-    class Main,Config,Stream,Detector,DB,MQTT processing
-    class MariaDB,FileSystem storage
+    class Main,Config,Stream,Detector,MQTT processing
+    class FileSystem storage
     class MQTTBroker,SmartHome external
 ```
 
@@ -107,13 +102,7 @@ graph TB
 - Ignore zone filtering
 - Confidence threshold management
 
-#### 5. **database_handler.py** - Data Persistence
-- MariaDB connection management
-- Image storage (original + thumbnails)
-- Metadata recording
-- Connection pooling
-
-#### 6. **mqtt_handler.py** - Real-time Communications
+#### 5. **mqtt_handler.py** - Real-time Communications
 - MQTT broker connection
 - Detection event publishing
 - Health monitoring (ping)
@@ -124,21 +113,14 @@ graph TB
 1. **Input**: IP Camera streams video via RTSP
 2. **Processing**: Stream processor captures frames
 3. **Detection**: YOLO analyzes frames for cats
-4. **Storage**: Positive detections stored in database + filesystem
-5. **Notification**: MQTT messages sent to smart home systems
+4. **Notification**: MQTT messages sent to smart home systems
+5. **Storage**: Annotated detection images saved to the results folder in the background
 6. **Action**: External systems (sprinklers) triggered
 
-### Storage Schema
+### Storage
 
-```
-detections_images Table:
-├── id (PRIMARY KEY)
-├── camera_name (VARCHAR)
-├── accuracy (DECIMAL) - 0.0 for monitoring, >0.0 for detections
-├── blob_jpeg (LONGBLOB) - Original image
-├── thumbnail_jpeg (BLOB) - 300px thumbnail
-└── created_at (TIMESTAMP)
-```
+Detection images are written as `frame_<timestamp>.jpg` to the results folder. When the root
+partition exceeds `usage_threshold`, the oldest images are deleted.
 
 ## Deployment Architecture
 
@@ -151,9 +133,6 @@ detections_images Table:
 │  │  ┌─────────────────────────┐││
 │  │  │   Katzenschreck App     │││
 │  │  └─────────────────────────┘││
-│  └─────────────────────────────┘│
-│  ┌─────────────────────────────┐│
-│  │      MariaDB Server         ││
 │  └─────────────────────────────┘│
 └─────────────────────────────────┘
 ```
@@ -169,9 +148,6 @@ detections_images Table:
 │  │  │   + Dependencies        │││
 │  │  └─────────────────────────┘││
 │  └─────────────────────────────┘│
-│  ┌─────────────────────────────┐│
-│  │   MariaDB Container         ││
-│  └─────────────────────────────┘│
 └─────────────────────────────────┘
 ```
 
@@ -181,25 +157,22 @@ detections_images Table:
 - **MQTT Brokers**: Mosquitto, HiveMQ, AWS IoT Core
 - **Smart Home**: Home Assistant, OpenHAB, NodeRED
 - **Cameras**: Any RTSP-compatible IP camera
-- **Databases**: MariaDB, MySQL (compatible)
 
 ### Network Requirements
 - **RTSP**: Camera stream access
 - **MQTT**: Port 1883 (unencrypted) or 8883 (TLS)
-- **Database**: Port 3306 (MariaDB/MySQL)
 - **HTTP/HTTPS**: Optional for web interfaces
 
 ## Performance Characteristics
 
 - **Frame Processing**: ~1-5 FPS (depending on hardware)
 - **Detection Latency**: <2 seconds from capture to MQTT
-- **Storage**: ~100KB per detection (with thumbnail)
+- **Storage**: ~100KB per detection image
 - **CPU Usage**: Moderate (YOLO inference)
 - **Memory**: ~500MB-2GB (model dependent)
 
 ## Security Considerations
 
-- Database credentials in configuration
 - MQTT authentication required
 - RTSP stream credentials
 - File system permissions

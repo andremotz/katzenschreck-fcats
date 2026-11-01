@@ -120,11 +120,9 @@ function updateTiming(timing) {
         timing.detection || 0,
         timing.detection_processing || 0,
         timing.mqtt_publish || 0,
-        timing.db_queue_wait || 0,
         timing.file_queue_wait || 0,
         timing.timestamp_generation || 0,
         timing.monitoring_update || 0,
-        timing.save_database_check || 0,
         timing.memory_cleanup || 0,
         timing.unaccounted_time || 0,
         timing.total || 0
@@ -137,11 +135,9 @@ function updateTiming(timing) {
         { label: 'Detection', value: timing.detection || 0 },
         { label: 'Detection Process', value: timing.detection_processing || 0 },
         { label: 'MQTT Publish', value: timing.mqtt_publish || 0 },
-        { label: 'DB Check', value: timing.save_database_check || 0 },
         { label: 'Monitoring Update', value: timing.monitoring_update || 0 },
         { label: 'Timestamp Gen', value: timing.timestamp_generation || 0 },
         { label: 'Memory Cleanup', value: timing.memory_cleanup || 0 },
-        { label: 'DB Queue Wait', value: timing.db_queue_wait || 0 },
         { label: 'File Queue Wait', value: timing.file_queue_wait || 0 },
         { label: 'Unaccounted Time', value: timing.unaccounted_time || 0, warning: timing.unaccounted_time > 0.5 },
         { label: 'Total', value: timing.total || 0, highlight: true }
@@ -195,8 +191,6 @@ function updateTiming(timing) {
 
 // Update queue status
 function updateQueues(queues) {
-    document.getElementById('db-queue-size').textContent = queues.db_queue.size;
-    document.getElementById('db-queue-wait').textContent = queues.db_queue.wait_time.toFixed(3) + 's';
     document.getElementById('file-queue-size').textContent = queues.file_queue.size;
     document.getElementById('file-queue-wait').textContent = queues.file_queue.wait_time.toFixed(3) + 's';
 }

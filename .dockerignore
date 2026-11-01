@@ -30,6 +30,8 @@ results_*/
 
 # Config (mounted at runtime, contains credentials)
 config.txt
+.env
+.env.*
 
 # Documentation
 *.md

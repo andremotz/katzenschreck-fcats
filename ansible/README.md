@@ -21,7 +21,6 @@ This Ansible playbook automates the deployment of the Katzenschreck cat detectio
    ```yaml
    rtsp_url: "rtsp://your-camera:554/stream"
    mqtt_broker: "your-mqtt-broker.local"
-   db_host: "your-database.local"
    ```
 
 3. **Deploy the system**:
@@ -52,10 +51,6 @@ ansible/
 
 - `rtsp_url`: RTSP stream URL for camera
 - `mqtt_broker`: MQTT broker hostname/IP
-- `db_host`: Database hostname/IP
-- `db_user`: Database username
-- `db_password`: Database password
-- `db_name`: Database name
 
 ### Optional Variables
 
@@ -139,7 +134,7 @@ ansible raspberry_pis -m systemd -a "name=katzenschreck state=restarted"
 ## Security Notes
 
 - SSH keys are recommended over passwords
-- Database credentials are stored in plain text (consider using Ansible Vault)
+- MQTT credentials are stored in plain text (consider using Ansible Vault)
 - Service runs as non-root user
 - Log files are rotated automatically
 

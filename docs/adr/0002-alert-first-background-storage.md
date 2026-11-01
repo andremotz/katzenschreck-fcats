@@ -16,3 +16,4 @@ After a few days of running, alerts arrived up to 37 s after the event. Saving i
 ## Consequences
 - A slow or unreachable database no longer delays alerts. This happened in practice: the database was unreachable for months and detection kept working.
 - Images can be lost under load or when the database is down. That is accepted: the alert matters, the archive does not.
+- Since ADR 0012 there is no database anymore; only the file worker remains.

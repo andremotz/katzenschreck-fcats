@@ -34,8 +34,6 @@ class MonitoringCollector:
         self._detections_history = deque(maxlen=max_history)
         
         # Queue status
-        self._db_queue_size = 0
-        self._db_queue_wait_time = 0.0
         self._file_queue_size = 0
         self._file_queue_wait_time = 0.0
         
@@ -45,14 +43,12 @@ class MonitoringCollector:
             'resize': 0.0,
             'detection': 0.0,
             'mqtt_publish': 0.0,
-            'db_queue_wait': 0.0,
             'file_queue_wait': 0.0,
             'total': 0.0,
             'frame_age': 0.0,  # Age of frame when processed (time between capture and processing)
             'reconnection_time': 0.0,  # Time taken to reconnect (reconnect_per_frame mode only)
             'timestamp_generation': 0.0,  # Time for timestamp string generation
             'monitoring_update': 0.0,  # Time for monitoring frame update (JPEG encoding)
-            'save_database_check': 0.0,  # Time for hourly database save check
             'detection_processing': 0.0,  # Time for processing detections (filtering, annotation)
             'memory_cleanup': 0.0,  # Time for memory cleanup operations
             'unaccounted_time': 0.0  # Time not accounted for in other measurements
@@ -114,14 +110,12 @@ class MonitoringCollector:
                 - resize: Time to resize frame
                 - detection: Time for YOLO detection
                 - mqtt_publish: Time to publish MQTT message
-                - db_queue_wait: Time waiting in DB queue
                 - file_queue_wait: Time waiting in file queue
                 - total: Total processing time
                 - frame_age: Age of frame when processed (optional)
                 - reconnection_time: Time for reconnection (optional)
                 - timestamp_generation: Time for timestamp generation (optional)
                 - monitoring_update: Time for monitoring update (optional)
-                - save_database_check: Time for database save check (optional)
                 - detection_processing: Time for detection processing (optional)
                 - memory_cleanup: Time for memory cleanup (optional)
                 - unaccounted_time: Unaccounted time (optional)
@@ -134,11 +128,9 @@ class MonitoringCollector:
                     timing.get('resize', 0.0),
                     timing.get('detection', 0.0),
                     timing.get('mqtt_publish', 0.0),
-                    timing.get('db_queue_wait', 0.0),
                     timing.get('file_queue_wait', 0.0),
                     timing.get('timestamp_generation', 0.0),
                     timing.get('monitoring_update', 0.0),
-                    timing.get('save_database_check', 0.0),
                     timing.get('detection_processing', 0.0),
                     timing.get('memory_cleanup', 0.0)
                 ])
@@ -187,19 +179,14 @@ class MonitoringCollector:
         with self._lock:
             self._detections_history.append(detection)
 
-    def update_queue_status(self, db_queue_size: int, db_queue_wait: float,
-                           file_queue_size: int, file_queue_wait: float):
+    def update_queue_status(self, file_queue_size: int, file_queue_wait: float):
         """Update queue status information
         
         Args:
-            db_queue_size: Current size of database queue
-            db_queue_wait: Average wait time in DB queue
             file_queue_size: Current size of file queue
             file_queue_wait: Average wait time in file queue
         """
         with self._lock:
-            self._db_queue_size = db_queue_size
-            self._db_queue_wait_time = db_queue_wait
             self._file_queue_size = file_queue_size
             self._file_queue_wait_time = file_queue_wait
 
@@ -291,10 +278,6 @@ class MonitoringCollector:
         """
         with self._lock:
             return {
-                'db_queue': {
-                    'size': self._db_queue_size,
-                    'wait_time': self._db_queue_wait_time
-                },
                 'file_queue': {
                     'size': self._file_queue_size,
                     'wait_time': self._file_queue_wait_time

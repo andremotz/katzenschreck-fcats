@@ -3,7 +3,7 @@ FROM python:3.10
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies for OpenCV and MariaDB
+# Install system dependencies for OpenCV
 RUN apt-get update && apt-get install -y \
     libgl1-mesa-glx \
     libglib2.0-0 \
@@ -11,7 +11,6 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libxrender-dev \
     libgomp1 \
-    libmariadb-dev \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
@@ -22,7 +21,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy all application files and modules
 COPY cat_detector/ ./cat_detector/
 COPY config.txt.example .
-COPY database_setup.sql .
 
 # Create output directory
 RUN mkdir -p /app/results

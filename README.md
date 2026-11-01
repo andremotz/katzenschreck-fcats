@@ -1,6 +1,6 @@
 # Katzenschreck-FCATS
 
-(a) Fully Configurable Automated Tracking Software: A containerized end-to-end monitoring system that uses YOLO object detection to identify cats from ip-camera streams, stores results in a database, and sends real-time alerts via MQTT. This might be used to trigger your sprinkler...
+(a) Fully Configurable Automated Tracking Software: A containerized end-to-end monitoring system that uses YOLO object detection to identify cats from ip-camera streams, stores detection images on disk, and sends real-time alerts via MQTT. This might be used to trigger your sprinkler...
 
 **Tested and running 24/7 on Raspberry Pi 3, 4 and NVIDIA Jetson Xavier NX Developer Board & Jetson Orin Nano Super Developer Kit** by the author, providing reliable cat detection in real-world garden environments.
 
@@ -19,29 +19,22 @@ The inference script can run on a Raspberry Pi, but an accelerated device like a
 
 - **Object Detection**: Automatic cat detection using YOLO
 - **MQTT Integration**: Send notifications when detections occur
-- **Database Storage**: Automatic frame storage every hour and detection images in MariaDB
+- **Detection Images**: Annotated images of every detection, oldest deleted automatically when the disk fills up
 - **RTSP Stream Support**: Support for IP cameras with RTSP protocol
 - **Ignore Zones**: Configurable areas to be ignored
-- **Image Generation**: Automatic creation of 300px wide thumbnails & detection-images.
 
 ## Installation & Setup
 
 Follow these steps in order:
 
-### 1. Set up database
-First, create the database and required tables. Adjust the script to your needs:
-```bash
-mysql -u root -p < database_setup.sql
-```
-
-### 2. Configure the system
+### 1. Configure the system
 Create and edit the configuration file:
 ```bash
 cp config.txt.example config.txt
-# Edit config.txt with your RTSP stream, MQTT broker, and database settings
+# Edit config.txt with your RTSP stream and MQTT broker settings
 ```
 
-### 3. Run the application
+### 2. Run the application
 
 Choose one of the following deployment methods:
 
@@ -158,10 +151,10 @@ python main.py <output_folder>
 
 ### System Overview
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   IP Camera     │    │  Katzenschreck  │    │   MariaDB       │    │  Schreckmonitor │
-│  (RTSP Stream)  │───▶│     System      │───▶│   Database      │───▶│   Desktop-App   │
-└─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   IP Camera     │    │  Katzenschreck  │    │  Results folder │
+│  (RTSP Stream)  │───▶│     System      │───▶│ (Detection JPGs)│
+└─────────────────┘    └─────────────────┘    └─────────────────┘
                               │
                               ▼
                        ┌─────────────────┐
@@ -189,13 +182,11 @@ graph TB
         subgraph "Processing Pipeline"
             Stream[stream_processor.py<br/>Main Loop]
             Detector[object_detector.py<br/>YOLO Detection]
-            DB[database_handler.py<br/>Database Ops]
             MQTT[mqtt_handler.py<br/>MQTT Comm]
         end
     end
     
     subgraph "Data Storage"
-        MariaDB[(MariaDB<br/>Images & Metadata)]
         FileSystem[File System<br/>Detection Images]
     end
     
@@ -206,13 +197,10 @@ graph TB
     Main --> Config
     Main --> Stream
     Stream --> Detector
-    Stream --> DB
     Stream --> MQTT
     Stream --> FileSystem
     Config -.-> Stream
-    Config -.-> DB
     Config -.-> MQTT
-    DB --> MariaDB
     MQTT --> MQTTBroker
     MQTTBroker --> SmartHome
 ```
@@ -244,13 +232,9 @@ The `config.txt` file contains all system configuration parameters. Copy `config
 - **`mqtt_username`** (required): MQTT authentication username
 - **`mqtt_password`** (required): MQTT authentication password
 
-### Database Configuration
+### Camera Configuration
 
-- **`db_host`** (optional, default: `localhost`): MariaDB/MySQL database host
-- **`db_user`** (optional, default: `katzenschreck_app`): Database username
-- **`db_password`** (optional, default: `p7eWPjGeIRXtMvCJw--`): Database password
-- **`db_database`** (optional, default: `katzenschreck`): Database name
-- **`camera_name`** (optional, default: `cam_garten`): Camera identifier for database records
+- **`camera_name`** (optional, default: `cam_garten`): Camera identifier, used for the container name, the results folder and the MQTT client id
 
 ### Object Detection Configuration
 
@@ -280,22 +264,12 @@ The `config.txt` file contains all system configuration parameters. Copy `config
   - Use when automatic detection fails (e.g., in Docker containers)
   - Options: `jetson`, `raspberry_pi`, `generic`
 
-## Database Schema
-
-The system automatically stores frames in the `detections_images` table:
-- `camera_name`: Camera name
-- `accuracy`: Accuracy value (0.0 for monitoring images, >0.0 for detections)
-- `blob_jpeg`: JPEG image data as BLOB
-- `thumbnail_jpeg`: 300px wide thumbnail as BLOB
-- `created_at`: Storage timestamp
-
 ## Module Structure
 
 The application is organized into modular components:
 
 - **`config.py`**: Configuration management
 - **`mqtt_handler.py`**: MQTT communication
-- **`database_handler.py`**: Database operations and thumbnail creation
 - **`object_detector.py`**: YOLO-based cat detection
 - **`stream_processor.py`**: Video stream processing coordination
 - **`main.py`**: Application entry point

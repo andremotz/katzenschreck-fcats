@@ -13,4 +13,4 @@ All settings live in one `config.txt` with `key=value` lines, read by `cat_detec
 ## Consequences
 - Simple to edit on the device, one file per camera.
 - No types, no validation beyond required keys, and lines starting with `#` are only ignored if they don't contain `=`.
-- `config.py` still contains a default database password. That should be removed.
+- `config.py` used to contain a default database password. It was removed together with the database (ADR 0012).

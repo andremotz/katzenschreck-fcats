@@ -9,9 +9,8 @@ numpy<2.0
 # OpenCV (ensure compatibility with ultralytics)
 opencv-python==4.8.1.78
 
-# MQTT and Database
+# MQTT
 paho-mqtt==2.1.0
-mysql-connector-python==8.0.33
 
 # Additional dependencies (if not already in base image)
 # These are typically already included in ultralytics:jetpack5

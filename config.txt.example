@@ -25,11 +25,7 @@ usage_threshold=0.8
 # Ignore Zone (optional) - Coordinates as decimal values (0.0-1.0): x_min,y_min,x_max,y_max
 # ignore_zone=0.1,0.1,0.3,0.3
 
-# Database Configuration (MariaDB/MySQL)
-db_host=<localhost>
-db_user=<katzenschreck_app>
-db_password=<123>
-db_database=katzenschreck
+# Camera name - used for the container name, the results folder and the MQTT client id
 camera_name=cam_teich
 
 # Hardware Type Override (optional) - Use when automatic detection fails (e.g., in Docker containers)

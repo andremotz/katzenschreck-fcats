@@ -3,7 +3,6 @@
 This package contains modules for:
 - Configuration management
 - MQTT communication
-- Database operations
 - Object detection using YOLO
 - Video stream processing
 """

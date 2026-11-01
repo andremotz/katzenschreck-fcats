@@ -1,6 +1,6 @@
 # 0009. Store images as BLOBs in MariaDB
 
-- Status: Accepted, under review
+- Status: Superseded by 0012
 - Date: 2025-09-24
 - Commits: 5c504a6, f327f40, e720904, fdc20db, b524305, ccce3f5
 
@@ -15,5 +15,5 @@ Detection images (with confidence) and one reference frame per hour (accuracy 0.
 - Every server has to raise `max_allowed_packet`. When it wasn't raised, every save failed with error 1153 (seen in production from April 2026). When the database is down, images only exist on the device.
 - Large BLOBs make the database and its backups grow quickly.
 
-## Open question
-In production the database had been failing for months without anyone noticing. Before investing more, it should be decided whether the database archive is still needed, or whether the files on the device (with the disk usage cleanup) are enough.
+## Outcome
+In production the database had been failing for months without anyone noticing. The archive was removed in ADR 0012.

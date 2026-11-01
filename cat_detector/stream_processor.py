@@ -14,7 +14,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from cat_detector.config import Config
 from cat_detector.object_detector import ObjectDetector
 from cat_detector.mqtt_handler import MQTTHandler
-from cat_detector.database_handler import DatabaseHandler
 from cat_detector.results_cleanup import cleanup_results_folder
 from cat_detector.monitoring_collector import MonitoringCollector
 from cat_detector.monitoring_server import MonitoringServer
@@ -31,11 +30,6 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
         model_path = config.yolo_model if config.yolo_model else None
         self.detector = ObjectDetector(model_path=model_path, hardware_type=config.hardware_type)
         self.mqtt_handler = MQTTHandler(config)
-        self.db_handler = DatabaseHandler(config)
-
-        # Frame timing for hourly saving
-        self.last_frame_save_time = 0
-        self.frame_save_interval = 3600  # 3600 seconds = 1 hour
 
         # Performance monitoring
         self.processing_times = []  # Track last N processing times
@@ -47,9 +41,8 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
         # RTSP Stream Reader (will be initialized in run())
         self.stream_reader = None
 
-        # Background task queues for non-blocking operations
-        self.db_queue = queue.Queue(maxsize=10)  # Limit queue size to prevent memory issues
-        self.file_queue = queue.Queue(maxsize=10)
+        # Background task queue for non-blocking file saves
+        self.file_queue = queue.Queue(maxsize=10)  # Limit queue size to prevent memory issues
         
         # Monitoring setup (if enabled)
         self.monitoring_collector = None
@@ -69,52 +62,11 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
 
     def _start_background_workers(self):
         """Starts background worker threads for non-blocking operations"""
-        # Database worker thread
-        db_worker = threading.Thread(target=self._db_worker, daemon=True)
-        db_worker.start()
-        
         # File save worker thread
         file_worker = threading.Thread(target=self._file_worker, daemon=True)
         file_worker.start()
         
         print("✅ Background workers started for non-blocking operations")
-
-    def _db_worker(self):
-        """Background worker thread for database operations"""
-        while True:
-            try:
-                task_start_time = time.time()
-                task = self.db_queue.get(timeout=1)
-                if task is None:  # Shutdown signal
-                    break
-                queue_wait_time = time.time() - task_start_time
-                frame, confidence, timestamp = task
-                self.db_handler.save_frame_to_database(frame, confidence)
-                print(f"✅ Background: Detection image saved to database (Confidence: {confidence:.2f})")
-                
-                # Update monitoring with queue wait time
-                if self.monitoring_collector:
-                    self.monitoring_collector.update_queue_status(
-                        self.db_queue.qsize(),
-                        queue_wait_time,
-                        self.file_queue.qsize(),
-                        0.0  # File queue wait time updated in file_worker
-                    )
-                
-                self.db_queue.task_done()
-            except queue.Empty:
-                # Update monitoring even when queue is empty
-                if self.monitoring_collector:
-                    self.monitoring_collector.update_queue_status(
-                        self.db_queue.qsize(),
-                        0.0,
-                        self.file_queue.qsize(),
-                        0.0
-                    )
-                continue
-            except Exception as e:
-                print(f"⚠️  Database worker error: {e}")
-                self.db_queue.task_done()
 
     def _file_worker(self):
         """Background worker thread for file operations"""
@@ -134,8 +86,6 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 # Update monitoring with queue wait time
                 if self.monitoring_collector:
                     self.monitoring_collector.update_queue_status(
-                        self.db_queue.qsize(),
-                        0.0,  # DB queue wait time updated in db_worker
                         self.file_queue.qsize(),
                         queue_wait_time
                     )
@@ -145,8 +95,6 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 # Update monitoring even when queue is empty
                 if self.monitoring_collector:
                     self.monitoring_collector.update_queue_status(
-                        self.db_queue.qsize(),
-                        0.0,
                         self.file_queue.qsize(),
                         0.0
                     )
@@ -195,28 +143,6 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
             timing['resize'] = resize_time
             self.monitoring_collector.update_timing_breakdown(timing)
         return frame
-
-    def _save_frame_to_database_if_needed(self, frame):
-        """Queues the current frame for database save if one hour has passed (non-blocking)"""
-        current_time = time.time()
-
-        if current_time - self.last_frame_save_time >= self.frame_save_interval:
-            self.last_frame_save_time = current_time
-            try:
-                # Queue for background processing
-                frame_copy = copy.deepcopy(frame)
-                self.db_queue.put_nowait((frame_copy, 0.0, time.strftime('%Y-%m-%d_%H-%M-%S-%f')[:-3]))
-                timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
-                print(f"✅ Hourly frame queued for database save at {timestamp}")
-                return True
-            except queue.Full:
-                print("⚠️  Database queue full, skipping hourly frame save")
-                return False
-            except Exception as e:
-                print(f"⚠️  Error queueing hourly frame save: {e}")
-                return False
-
-        return False
 
     def _process_detections(self, frame, detections, results, timestamp, timestamp_readable, detection_time: float):
         """Processes the detections with priority: MQTT first, then background tasks
@@ -273,16 +199,6 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
             # PRIORITY 2: Queue frame for background file saving (non-blocking)
             self._save_detection(annotated_frame, timestamp)
 
-            # PRIORITY 3: Queue database save for background (non-blocking)
-            try:
-                # Make a copy of the frame for the background thread
-                frame_copy = copy.deepcopy(annotated_frame)
-                self.db_queue.put_nowait((frame_copy, confidence, timestamp))
-            except queue.Full:
-                print("⚠️  Database queue full, skipping DB save (non-critical)")
-            except Exception as e:
-                print(f"⚠️  Error queueing database save: {e}")
-        
         return total_mqtt_time
 
     def run(self):
@@ -319,7 +235,6 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 'resize': 0.0,
                 'detection': 0.0,
                 'mqtt_publish': 0.0,
-                'db_queue_wait': 0.0,
                 'file_queue_wait': 0.0,
                 'total': 0.0,
                 'frame_age': 0.0,
@@ -412,11 +327,6 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 self.monitoring_collector.update_frame(frame, frame_timestamp)
             timing_breakdown['monitoring_update'] = time.time() - monitoring_update_start
 
-            # Save frame to database every hour (non-blocking, in background)
-            db_check_start = time.time()
-            self._save_frame_to_database_if_needed(frame)
-            timing_breakdown['save_database_check'] = time.time() - db_check_start
-
             # Object detection (this is the main blocking operation)
             detection_start = time.time()
             detections, results = self.detector.detect_objects(frame)
@@ -433,7 +343,7 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                           f"Threshold: {self.config.confidence_threshold})")
 
             # Process detections (pass timestamp from before detection)
-            # MQTT is sent immediately, DB and file save happen in background
+            # MQTT is sent immediately, file save happens in background
             detection_processing_start = time.time()
             mqtt_total_time = 0.0
             if detections:
@@ -463,11 +373,9 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 timing_breakdown.get('detection', 0.0),
                 timing_breakdown.get('detection_processing', 0.0),
                 timing_breakdown.get('mqtt_publish', 0.0),
-                timing_breakdown.get('save_database_check', 0.0),
                 timing_breakdown.get('monitoring_update', 0.0),
                 timing_breakdown.get('timestamp_generation', 0.0),
                 timing_breakdown.get('memory_cleanup', 0.0),
-                timing_breakdown.get('db_queue_wait', 0.0),
                 timing_breakdown.get('file_queue_wait', 0.0)
             ])
             timing_breakdown['unaccounted_time'] = max(0.0, total_processing_time - accounted_time)
@@ -478,8 +386,6 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 self.monitoring_collector.update_processing_time(total_processing_time)
                 # Update queue status
                 self.monitoring_collector.update_queue_status(
-                    self.db_queue.qsize(),
-                    0.0,  # Will be updated by workers
                     self.file_queue.qsize(),
                     0.0   # Will be updated by workers
                 )
@@ -498,7 +404,6 @@ class StreamProcessor:  # pylint: disable=too-few-public-methods
                 print(f"   - Detection:         {timing_breakdown.get('detection', 0.0):.3f}s")
                 print(f"   - Detection Process: {timing_breakdown.get('detection_processing', 0.0):.3f}s")
                 print(f"   - MQTT Publish:      {timing_breakdown.get('mqtt_publish', 0.0):.3f}s")
-                print(f"   - DB Check:          {timing_breakdown.get('save_database_check', 0.0):.3f}s")
                 print(f"   - Monitoring Update: {timing_breakdown.get('monitoring_update', 0.0):.3f}s")
                 print(f"   - Memory Cleanup:     {timing_breakdown.get('memory_cleanup', 0.0):.3f}s")
                 print(f"   - Timestamp Gen:     {timing_breakdown.get('timestamp_generation', 0.0):.3f}s")

@@ -33,7 +33,7 @@
       register: config_file
 
     - name: Test Python imports
-      command: "{{ katzenschreck_dir }}/venv/bin/python -c 'import cv2, ultralytics, mysql.connector, paho.mqtt.client'"
+      command: "{{ katzenschreck_dir }}/venv/bin/python -c 'import cv2, ultralytics, paho.mqtt.client'"
       become_user: "{{ katzenschreck_user }}"
       register: import_test
       failed_when: false

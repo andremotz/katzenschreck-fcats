@@ -43,11 +43,7 @@ class Config:  # pylint: disable=too-few-public-methods,too-many-instance-attrib
         self.usage_threshold = float(config.get('usage_threshold', 0.8))
         self.yolo_model = config.get('yolo_model')  # Optional: if None, auto-detection will be used
 
-        # Database configuration
-        self.db_host = config.get('db_host', 'localhost')
-        self.db_user = config.get('db_user', 'katzenschreck_app')
-        self.db_password = config.get('db_password', 'p7eWPjGeIRXtMvCJw--')
-        self.db_database = config.get('db_database', 'katzenschreck')
+        # Camera identifier (container name, results folder, MQTT client id)
         self.camera_name = config.get('camera_name', 'cam_garten')
 
         # Ignore zone configuration

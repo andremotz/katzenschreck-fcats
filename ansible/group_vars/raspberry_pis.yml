@@ -2,10 +2,6 @@
 rtsp_url: "rtsp://camera.local:554/stream"
 mqtt_broker: "mqtt.local"
 mqtt_topic: "katzenschreck/detections"
-db_host: "database.local"
-db_user: "katzenschreck"
-db_password: "secure_password"
-db_name: "katzenschreck_db"
 
 # System Configuration
 enable_docker: false

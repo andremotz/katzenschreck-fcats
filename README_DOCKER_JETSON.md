@@ -126,15 +126,6 @@ docker logs katzenschreck
 docker run --rm --runtime nvidia katzenschreck:jetson nvidia-smi
 ```
 
-### Error "No module named 'mysql'"
-
-The Dockerfile installs `mysql-connector-python` automatically. If the error occurs:
-
-```bash
-# Rebuild the image
-docker-compose -f docker-compose.jetson.yml build --no-cache
-```
-
 ### RTSP Stream Not Reachable
 
 Make sure `network_mode: host` is set in docker-compose.yml.

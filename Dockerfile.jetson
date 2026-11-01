@@ -33,7 +33,6 @@ RUN pip install --upgrade setuptools wheel
 # Also install monitoring dependencies
 RUN pip install --no-cache-dir \
     paho-mqtt \
-    mysql-connector-python \
     psutil \
     fastapi \
     uvicorn[standard] \

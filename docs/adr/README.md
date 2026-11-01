@@ -16,9 +16,10 @@ What the system must do lives in `openspec/specs/`. ADRs record *why* it is buil
 | [0006](0006-docker-on-jetpack6-base-image.md) | Docker on the Ultralytics JetPack 6 image for Jetson | Accepted |
 | [0007](0007-build-image-from-local-checkout.md) | Build the image from the local checkout | Accepted, supersedes Git-clone build (2496d93) |
 | [0008](0008-one-container-per-camera.md) | One container per camera | Accepted |
-| [0009](0009-images-in-mariadb.md) | Store images as BLOBs in MariaDB | Accepted, under review |
+| [0009](0009-images-in-mariadb.md) | Store images as BLOBs in MariaDB | Superseded by 0012 |
 | [0010](0010-key-value-config-file.md) | Single key=value config file, mounted at runtime | Accepted |
 | [0011](0011-agpl-license.md) | AGPL-3.0 license | Accepted |
+| [0012](0012-remove-database-archive.md) | Remove the database archive | Accepted, supersedes 0009 |
 
 ## Template
 
