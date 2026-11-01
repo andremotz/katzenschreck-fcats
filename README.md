@@ -138,6 +138,10 @@ This repository includes specialized documentation for Jetson devices:
 - **Docker approach** (README_DOCKER_JETSON.md): Faster setup, easier maintenance, recommended for most users
 - **Native approach** (JETSON_PYTORCH_SETUP.md): More control, custom Python versions, advanced configurations
 
+**Specifications and decisions:**
+- **[openspec/specs/](openspec/specs/)**: What the system must do, as [OpenSpec](https://github.com/Fission-AI/OpenSpec) capability specs. New changes are proposed under `openspec/changes/` (e.g. with `/opsx-propose`).
+- **[docs/adr/](docs/adr/README.md)**: Architecture Decision Records explaining why the system is built this way.
+
 ## Manual Usage
 
 If you prefer to run manually without automation:
