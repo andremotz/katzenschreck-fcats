@@ -2,7 +2,7 @@
 
 - Status: Accepted (supersedes 0009)
 - Date: 2026-11-01
-- Commits: see branch `feat/remove-database`
+- Commits: 827fbca
 
 ## Context
 ADR 0009 stored every detection and an hourly reference frame in MariaDB. In production, every

@@ -12,13 +12,6 @@ For each accepted detection the system SHALL publish to `{mqtt_topic}/{class_nam
 - **WHEN** a cat is detected above the threshold
 - **THEN** a message `{"time": ..., "class": "Cat", "confidence": ...}` is published to `{mqtt_topic}/Cat`
 
-### Requirement: Alert has priority
-The MQTT message SHALL be published before any image is saved to disk or database, and those saves SHALL NOT delay the publish. The timestamp SHALL be taken before detection runs.
-
-#### Scenario: Slow database
-- **WHEN** the database is slow or unreachable
-- **THEN** detection messages are still published without waiting for it
-
 ### Requirement: Heartbeat
 While connected, the system SHALL publish `{"timestamp": <unix seconds>}` to `{mqtt_topic}/ping` every 30 seconds.
 
@@ -32,3 +25,10 @@ The system SHALL keep one persistent MQTT connection with a unique client id (`k
 #### Scenario: Broker restart
 - **WHEN** the broker restarts
 - **THEN** the client reconnects without restarting the application
+
+### Requirement: Alert before storage
+The MQTT message SHALL be published before the detection image is saved, and saving SHALL NOT delay the publish. The timestamp SHALL be taken before detection runs.
+
+#### Scenario: Slow disk
+- **WHEN** saving the detection image is slow
+- **THEN** the detection message is still published without waiting for it

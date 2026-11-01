@@ -15,5 +15,5 @@
 
 ## 3. Deploy
 
-- [ ] 3.1 Remove `db_*` lines from `config.txt` on the Jetson
-- [ ] 3.2 Rebuild and restart the container, verify detections and MQTT
+- [x] 3.1 Remove `db_*` lines from `config.txt` on the Jetson
+- [x] 3.2 Rebuild and restart the container, verify detections and MQTT
