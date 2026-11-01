@@ -85,13 +85,13 @@ docker rm katzenschreck
 
 ### Hardware Detection
 
-Since automatic hardware detection doesn't work inside Docker containers, you **must** set the following line in `config.txt`:
+The Jetson is detected automatically inside the container (via `/etc/nv_tegra_release` or the CUDA device name reported by PyTorch), so the Jetson-optimized inference settings (FP16, GPU) are used without extra configuration.
+
+If detection fails, you can still force it in `config.txt`:
 
 ```
 hardware_type=jetson
 ```
-
-This ensures that the optimal YOLO11x model for Jetson is used.
 
 ### GPU Access
 

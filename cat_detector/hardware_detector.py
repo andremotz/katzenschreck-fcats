@@ -36,13 +36,22 @@ class HardwareDetector:
         return platform.system().lower()
     
     def _is_jetson_device(self) -> bool:
-        """Check if running on NVIDIA Jetson device"""
+        """Check if running on NVIDIA Jetson device (natively or inside a container)"""
         try:
-            # Check for Jetson-specific files and commands
+            # Native: the device tree names the board
+            # (not available inside Docker containers)
             if os.path.exists('/proc/device-tree/model'):
                 with open('/proc/device-tree/model', 'r') as f:
                     model = f.read().strip()
                     return 'jetson' in model.lower() or 'xavier' in model.lower()
+            
+            # L4T release file: present on Jetson hosts and in L4T/JetPack-based images
+            if os.path.exists('/etc/nv_tegra_release'):
+                return True
+            
+            # Container with GPU access: CUDA reports the integrated Tegra GPU
+            if self._has_tegra_cuda_device():
+                return True
             
             # Check for nvidia-smi or tegrastats
             try:
@@ -53,6 +62,19 @@ class HardwareDetector:
                 pass
                 
             return False
+        except Exception:
+            return False
+    
+    def _has_tegra_cuda_device(self) -> bool:
+        """Check via PyTorch whether the CUDA device is a Jetson (integrated Tegra) GPU"""
+        if platform.machine().lower() not in ('aarch64', 'arm64'):
+            return False
+        try:
+            import torch  # pylint: disable=import-outside-toplevel
+            if not torch.cuda.is_available():
+                return False
+            name = torch.cuda.get_device_name(0).lower()
+            return any(tag in name for tag in ('orin', 'xavier', 'tegra'))
         except Exception:
             return False
     
