@@ -17,5 +17,5 @@ The detector only publishes MQTT messages. It does not control any actuator itse
 
 ## Consequences
 - What happens after a detection (sprinkler, how long, time windows) is decided entirely in Home Assistant and can be changed without touching the detector.
-- End-to-end latency is split across two systems. Measured over 27 sprinkler runs (20.10.–01.11.2026): detection to Home Assistant trigger median 0.5 s (max 1.0 s), trigger to first sprinkler switched on median 0.2 s (max 1.4 s). The order and timing of the sprinklers is decided by the Home Assistant script (30.10.2026: sequence 1-2-3 at about 4 s each, so sprinkler 3 started about 9 s after the trigger).
+- End-to-end latency is split across two systems. Measured over 27 sprinkler runs (20.10.–01.11.2026): detection to Home Assistant trigger under about 1 s (estimated from image file names with one-second resolution), trigger to first sprinkler switched on median 0.2 s (max 1.4 s). The order and timing of the sprinklers is decided by the Home Assistant script (30.10.2026: sequence 1-2-3 at about 4 s each, so sprinkler 3 started about 9 s after the trigger).
 - With QoS 0 a message lost during a broker restart is not repeated.
