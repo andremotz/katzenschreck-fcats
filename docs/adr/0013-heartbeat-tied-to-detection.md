@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-11-01
-- Commits: see `openspec/changes/archive/*-detector-liveness/`
+- Commits: ef825f9
 
 ## Context
 Home Assistant raises an alarm when the MQTT heartbeat (`{mqtt_topic}/ping`) stops for 5 minutes. The heartbeat came from its own thread and only proved that the process and the MQTT connection were alive. The Docker health check only looked at `is_streaming`, which is set once at startup.

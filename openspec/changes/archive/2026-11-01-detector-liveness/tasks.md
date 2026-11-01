@@ -15,5 +15,5 @@
 
 ## 3. Deploy
 
-- [ ] 3.1 Rebuild and restart the container on the Jetson
-- [ ] 3.2 Verify `/api/status`, health status and that pings still arrive in Home Assistant
+- [x] 3.1 Rebuild and restart the container on the Jetson
+- [x] 3.2 Verify `/api/status`, health status and that pings still arrive in Home Assistant
